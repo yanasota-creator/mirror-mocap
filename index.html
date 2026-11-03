@@ -60,7 +60,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, label.file:focu
   position: absolute; left: 16px; bottom: 16px; margin: 0; width: min(260px, 38%);
   border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #000;
   box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  cursor: pointer; transition: width .2s;
 }
+.pip.mini { width: 64px; }
+.pip.mini figcaption { display: none; }
 .pip .inner { position: relative; }
 .pip.mirror .inner { transform: scaleX(-1); }
 .pip video, .pip canvas { display: block; width: 100%; height: auto; }
@@ -151,6 +154,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   .main { grid-template-columns: 1fr; }
   .stage { height: 70vh; min-height: 380px; }
   .panel { border-left: 0; border-top: 1px solid var(--line); padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  /* phone front cameras give a tall portrait frame: keep the preview small so it doesn't cover the avatar */
+  .pip { width: min(120px, 26%); left: 10px; bottom: 10px; }
+  .pip.mini { width: 48px; }
+  .pip figcaption { font-size: 10px; top: 4px; left: 4px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -172,7 +179,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     <main class="stage" id="stage">
       <canvas id="three" aria-label="3Dアバター表示"></canvas>
 
-      <figure class="pip mirror" id="pip" hidden>
+      <figure class="pip mirror" id="pip" hidden title="タップで小さく／元に戻す">
         <div class="inner"><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div>
         <figcaption id="pipLabel">カメラ</figcaption>
       </figure>
@@ -1082,6 +1089,7 @@ async function listCameras() {
     sel.value = cur;
   } catch {}
 }
+$('#pip').onclick = () => $('#pip').classList.toggle('mini');
 $('#startBtn').onclick = startCamera;
 $('#camBtn').onclick = startCamera;
 $('#camSelect').onchange = () => { if (stream) startCamera(); };
