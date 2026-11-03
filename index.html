@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mirror Mocap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 3D stage fills the left, a narrow control rack on the right (stacks below on phones). Single dark "studio" look on purpose. */
+:root {
+  --bg: #12141b;
+  --stage: #171a23;
+  --panel: #1b1e28;
+  --line: #2a2e3b;
+  --fg: #e7e8ee;
+  --muted: #8d92a6;
+  --accent: #7cc4ff;
+  --accent-ink: #0d1a26;
+  --ok: #5fd39a;
+  --warn: #f2b544;
+  --rec: #ff6b6b;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.6 var(--font-body); }
+button, select, input { font: inherit; color: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible, label.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.bar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+.brand b { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .02em; }
+.brand small { color: var(--muted); font-size: 12px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px; transition: color .2s, border-color .2s;
+}
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: background .2s; }
+.chip.on { color: var(--fg); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.chip.on::before { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.meter { font: 12px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.main { min-height: 0; display: grid; grid-template-columns: 1fr 300px; }
+.stage { position: relative; min-width: 0; min-height: 0; background: var(--stage); overflow: hidden; }
+#three { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.pip {
+  position: absolute; left: 16px; bottom: 16px; margin: 0; width: min(260px, 38%);
+  border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #000;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+.pip .inner { position: relative; }
+.pip.mirror .inner { transform: scaleX(-1); }
+.pip video, .pip canvas { display: block; width: 100%; height: auto; }
+.pip canvas { position: absolute; inset: 0; height: 100%; }
+.pip figcaption { position: absolute; top: 6px; left: 8px; font-size: 11px; color: #fff; background: rgba(0,0,0,.5); padding: 0 6px; border-radius: 4px; }
+
+.views { position: absolute; right: 16px; bottom: 16px; display: flex; gap: 4px; background: rgba(18,20,27,.7); border: 1px solid var(--line); border-radius: 8px; padding: 3px; backdrop-filter: blur(6px); }
+.views button { border: 0; background: transparent; padding: 4px 10px; border-radius: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.views button[aria-pressed="true"] { background: var(--line); color: var(--fg); }
+
+.intro {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(18,20,27,.35), rgba(18,20,27,.88) 70%);
+}
+.intro .card { max-width: 440px; text-align: left; display: grid; gap: 14px; }
+.intro h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(22px, 3.2vw, 30px); line-height: 1.35; margin: 0; text-wrap: balance; }
+.intro p { margin: 0; color: var(--muted); }
+.intro .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.note { font: 12px var(--font-mono); color: var(--accent); min-height: 1.6em; }
+
+.btn { border: 1px solid var(--line); background: #232734; padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: background .15s, border-color .15s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:hover { background: #2a2f3e; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); }
+.btn.rec[aria-pressed="true"] { border-color: var(--rec); color: var(--rec); }
+.btn.rec .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rec); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+dialog.browser { width: min(780px, calc(100% - 32px)); max-height: calc(100% - 48px); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--fg); overflow: hidden; }
+dialog.browser[open] { display: grid; grid-template-rows: auto auto 1fr; }
+dialog.browser::backdrop { background: rgba(8,9,13,.7); }
+.br-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.br-head h3 { margin: 0 auto 0 0; font-size: 15px; font-weight: 700; }
+.br-note { margin: 0; padding: 8px 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.br-grid { overflow-y: auto; padding: 14px 16px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; align-content: start; min-height: 120px; }
+.br-card { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: #20232e; cursor: pointer; text-align: center; font-size: 12px; min-width: 0; }
+.br-card:hover { border-color: var(--accent); }
+.br-card .th { aspect-ratio: 1; border-radius: 6px; background: #14161d; overflow: hidden; display: grid; place-items: center; color: var(--muted); }
+.br-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.br-card span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-card { position: relative; }
+.br-card[aria-current="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.br-card .lic { position: absolute; top: 10px; left: 10px; font: 600 10px var(--font-mono); padding: 1px 6px; border-radius: 4px; background: rgba(13,15,20,.75); color: var(--fg); }
+.cur { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.cur-th { width: 56px; height: 56px; flex: none; border-radius: 8px; background: #14161d center / cover no-repeat; border: 1px solid var(--line); }
+.cur-tx { display: grid; gap: 2px; min-width: 0; }
+.cur-tx b { font-weight: 500; overflow-wrap: anywhere; }
+.cur-tx span { font-size: 11px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+.chip.hold { color: var(--fg); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.chip.hold::before { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.br-empty { grid-column: 1 / -1; color: var(--muted); text-align: center; padding: 24px 0; }
+
+.panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding-block: 8px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; align-content: start; gap: 4px; }
+.sec { padding-block: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.sec:last-child { border-bottom: 0; }
+.sec h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+.sec .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+select { width: 100%; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+label.file { position: relative; }
+label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.current { font-size: 12px; color: var(--muted); }
+.current b { color: var(--fg); font-weight: 500; }
+
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+.toggle input { appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; transition: background .15s; flex: none; margin: 0; }
+.toggle input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); transition: transform .15s; }
+.toggle input:checked { background: var(--accent); }
+.toggle input:checked::after { transform: translateX(14px); background: var(--accent-ink); }
+.toggle small { color: var(--muted); display: block; font-size: 11px; line-height: 1.4; }
+
+.slider { display: grid; gap: 4px; }
+.slider .top { display: flex; justify-content: space-between; }
+.slider output { font: 12px var(--font-mono); color: var(--muted); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.tips { margin: 0; padding-left: 1.1em; color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+.tips b { color: var(--fg); font-weight: 500; }
+
+.toast { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); background: #2a1e22; border: 1px solid color-mix(in srgb, var(--rec) 55%, var(--line)); color: var(--fg); padding: 12px 14px; border-radius: 10px; display: grid; gap: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.4); z-index: 5; }
+.toast.info { background: #1b2733; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.toast b { font-weight: 700; }
+.toast span { color: var(--muted); font-size: 13px; }
+.toast button { justify-self: end; background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0; }
+
+@media (max-width: 760px) {
+  .app { height: auto; min-height: 100%; }
+  .main { grid-template-columns: 1fr; }
+  .stage { height: 70vh; min-height: 380px; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><b>Mirror Mocap</b><small>内蔵カメラ → 3Dアバター</small></div>
+    <div class="chips" aria-label="トラッキング状態">
+      <span class="chip" id="chipBody">体</span>
+      <span class="chip" id="chipFace">顔</span>
+      <span class="chip" id="chipLH">左手</span>
+      <span class="chip" id="chipRH">右手</span>
+    </div>
+    <div class="meter" id="meter">推定 — fps · 描画 — fps</div>
+  </header>
+
+  <div class="main">
+    <main class="stage" id="stage">
+      <canvas id="three" aria-label="3Dアバター表示"></canvas>
+
+      <figure class="pip mirror" id="pip" hidden>
+        <div class="inner"><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div>
+        <figcaption id="pipLabel">カメラ</figcaption>
+      </figure>
+
+      <div class="views" role="group" aria-label="視点">
+        <button type="button" data-view="full" aria-pressed="false">全身</button>
+        <button type="button" data-view="upper" aria-pressed="true">上半身</button>
+        <button type="button" data-view="face" aria-pressed="false">顔</button>
+      </div>
+
+      <div class="intro" id="intro">
+        <div class="card">
+          <h1>内蔵カメラだけで、<br>アバターを動かす</h1>
+          <p>体・顔・指の動きをブラウザ内のAI（MediaPipe）で推定して、3Dモデルに反映します。映像はこのPCの外には送られません。</p>
+          <div class="row">
+            <button type="button" class="btn primary" id="startBtn">カメラを開始</button>
+            <label class="btn file">動画ファイルで試す<input type="file" id="videoFile2" accept="video/*"></label>
+          </div>
+          <p class="hint">初回はAIモデル（約20MB）をダウンロードします。カメラの許可を聞かれたら「許可」を選んでください。</p>
+          <p class="note" id="loadNote" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="toast" id="toast" role="alert" hidden><b id="toastTitle"></b><span id="toastBody"></span><button type="button" id="toastClose">閉じる</button></div>
+    </main>
+
+    <aside class="panel">
+      <section class="sec">
+        <h2>入力</h2>
+        <div class="grid2">
+          <button type="button" class="btn" id="camBtn">カメラ開始</button>
+          <label class="btn file">動画ファイル<input type="file" id="videoFile" accept="video/*"></label>
+        </div>
+        <select id="camSelect" aria-label="使用するカメラ"><option value="">既定のカメラ</option></select>
+      </section>
+
+      <section class="sec">
+        <h2>アバター</h2>
+        <div class="cur">
+          <div class="cur-th" id="curThumb" aria-hidden="true"></div>
+          <div class="cur-tx"><b id="avatarName">—</b><span id="avatarCredit"></span></div>
+        </div>
+        <button type="button" class="btn primary" id="pickBtn">モデルを選ぶ</button>
+        <div class="grid2">
+          <button type="button" class="btn" id="mannequinBtn">マネキン</button>
+          <label class="btn file">自分のVRM<input type="file" id="vrmFile" accept=".vrm"></label>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>処理モード</h2>
+        <select id="optQuality" aria-label="処理モード">
+          <option value="light">軽量（速さ優先・古いPC向け）</option>
+          <option value="standard" selected>標準（精度と速さのバランス）</option>
+          <option value="high">高精度（GPUが強いPC向け）</option>
+        </select>
+        <p class="hint" id="perfDetail">推定にかかる時間がここに出ます。</p>
+      </section>
+
+      <section class="sec">
+        <h2>トラッキング</h2>
+        <label class="toggle">体<input type="checkbox" id="optBody" checked></label>
+        <label class="toggle">顔と表情<input type="checkbox" id="optFace" checked></label>
+        <label class="toggle">手と指<input type="checkbox" id="optHands" checked></label>
+        <label class="toggle"><span>脚<small>膝と足首が映っているときだけ動かします</small></span><input type="checkbox" id="optLegs" checked></label>
+        <label class="toggle"><span>ミラー<small>鏡のように同じ側の手が動きます</small></span><input type="checkbox" id="optMirror" checked></label>
+        <div class="slider">
+          <div class="top"><label for="optSmooth">なめらかさ</label><output id="smoothOut">45</output></div>
+          <input type="range" id="optSmooth" min="0" max="100" value="45">
+          <p class="hint">上げるとブレが減り、動きが少し遅れます。</p>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optJiggle">ぷるぷる（慣性）</label><output id="jiggleOut">55</output></div>
+          <input type="range" id="optJiggle" min="0" max="100" value="55">
+          <p class="hint">上げると動きが行き過ぎて戻り、耳・しっぽ・髪がよく揺れます。</p>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>調整</h2>
+        <button type="button" class="btn" id="calibBtn">正面リセット</button>
+        <p class="hint">カメラに向かってまっすぐ座った状態で押すと、その姿勢を「正面」として記憶します。首や体が傾いて見えるときに使います。</p>
+      </section>
+
+      <section class="sec">
+        <h2>録画</h2>
+        <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
+        <p class="hint">停止すると .webm ファイルとして保存されます。</p>
+      </section>
+
+      <section class="sec">
+        <h2>精度を上げるコツ</h2>
+        <ul class="tips">
+          <li><b>明るく</b>：顔に正面から光が当たると指と表情が安定します。</li>
+          <li><b>距離</b>：画面から60〜100cm離れて、ひじまで映すと腕が動きます。</li>
+          <li><b>手</b>：手のひらをカメラに向けると指の推定が正確になります。</li>
+          <li><b>服と背景</b>：背景と色が違う服だと体の輪郭を拾いやすくなります。</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<dialog class="browser" id="browser" aria-labelledby="brTitle">
+  <div class="br-head">
+    <h3 id="brTitle">モデルを選ぶ</h3>
+    <button type="button" class="btn" id="brClose">閉じる</button>
+  </div>
+  <p class="br-note">どれも作者が無料での利用を認めているアニメ調のVRMです。選ぶと配布元（GitHub）から読み込みます（1体10〜20MB）。バッジはライセンスの種類です。</p>
+  <div class="br-grid" id="brGrid"></div>
+</dialog>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+const MP_VERSION = '0.10.21';
+const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+const MODEL_URLS = {
+  poseLite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+  poseFull: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+  poseHeavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
+  face: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+  hand: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+};
+// Anime-style VRM models whose authors allow free use, loaded from where they are published (not bundled into this page).
+// Most come via github.com/Cookieboty/companion-desk-models, which pins each file and records its licence.
+const MODELS = [
+  { id: 'twist', name: 'VRM1サンプル', lic: 'VPL', thumb: 'data:image/jpeg;base64,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',
+    url: 'https://cdn.jsdelivr.net/gh/pixiv/three-vrm@v3.4.4/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm',
+    credit: '© 2022 pixiv Inc. · VRM Public License 1.0' },
+  { id: 'alicia', name: 'アリシア', lic: '規約', thumb: 'data:image/jpeg;base64,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',
+    url: 'https://raw.githubusercontent.com/vrm-c/UniVRM/master/Tests/Models/Alicia_vrm-0.51/AliciaSolid_vrm-0.51.vrm',
+    credit: '© DWANGO Co., Ltd. · ニコニ立体ちゃん利用規約（暴力・性的表現での利用不可）' },
+  { id: 'shino', name: '千駄ヶ谷 篠', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/sendagaya-shino-v1.0.0/models/sendagaya-shino/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/sendagaya-shino-v1.0.0/models/sendagaya-shino/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'shibu', name: '千駄ヶ谷 渋', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/default-character-v1.0.0/models/default-character/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/default-character-v1.0.0/models/default-character/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'vivi', name: 'ビビ', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/vivi-v1.0.0/models/vivi/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/vivi-v1.0.0/models/vivi/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'vita', name: 'ヴィータ', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/vita-v1.0.0/models/vita/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/vita-v1.0.0/models/vita/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'victoria', name: 'ヴィクトリア', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/victoria-rubin-v1.0.0/models/victoria-rubin/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/victoria-rubin-v1.0.0/models/victoria-rubin/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'hairf', name: 'HairSample', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/hair-sample-female-v1.0.0/models/hair-sample-female/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/hair-sample-female-v1.0.0/models/hair-sample-female/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'darkshibu', name: 'Darkness Shibu', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/darkness-shibu-v1.0.0/models/darkness-shibu/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/darkness-shibu-v1.0.0/models/darkness-shibu/model.vrm', credit: '© pixiv Inc. / VRoid Project · CC0 1.0（自由に利用可）' },
+  { id: 'shapell', name: 'シェイプル', lic: 'CC0', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/shapell-v1.0.3/models/shapell/thumb.jpg', url: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/shapell-v1.0.3/models/shapell/model.vrm',
+    credit: 'Shapell by lowteq · CC0 1.0（VRM変換: Companion Desk）' },
+  { id: 'sampleA', name: 'AvatarSample A', lic: '規約', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/avatar-sample-a-v1.0.0/models/avatar-sample-a/thumb.jpg',
+    url: 'https://raw.githubusercontent.com/madjin/vrm-samples/master/vroid/stable/AvatarSample_A.vrm', credit: '© pixiv Inc. / VRoid Project · AvatarSample規約（商用可・クレジット不要・ヘイト等の用途は不可）' },
+  { id: 'sampleB', name: 'AvatarSample B', lic: '規約', thumb: 'https://raw.githubusercontent.com/Cookieboty/companion-desk-models/avatar-sample-b-v1.0.0/models/avatar-sample-b/thumb.jpg',
+    url: 'https://raw.githubusercontent.com/madjin/vrm-samples/master/vroid/stable/AvatarSample_B.vrm', credit: '© pixiv Inc. / VRoid Project · AvatarSample規約（商用可・クレジット不要・ヘイト等の用途は不可）' },
+  { id: 'sampleC', name: 'AvatarSample C', lic: '規約', thumb: 'data:image/jpeg;base64,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',
+    url: 'https://raw.githubusercontent.com/madjin/vrm-samples/master/vroid/stable/AvatarSample_C.vrm', credit: '© pixiv Inc. / VRoid Project · AvatarSample規約（商用可・クレジット不要・ヘイト等の用途は不可）' },
+];
+
+const $ = (s) => document.querySelector(s);
+const V3 = THREE.Vector3, Q = THREE.Quaternion;
+const UP = new V3(0, 1, 0);
+const SIDES = ['left', 'right'];
+
+/* ---------------- UI helpers ---------------- */
+function toast(title, body, kind = 'error') {
+  $('#toastTitle').textContent = title;
+  $('#toastBody').textContent = body;
+  $('#toast').className = 'toast' + (kind === 'info' ? ' info' : '');
+  $('#toast').hidden = false;
+}
+$('#toastClose').onclick = () => { $('#toast').hidden = true; };
+const note = (t) => { $('#loadNote').textContent = t; };
+
+const opts = {
+  get body() { return $('#optBody').checked; },
+  get face() { return $('#optFace').checked; },
+  get hands() { return $('#optHands').checked; },
+  get legs() { return $('#optLegs').checked; },
+  get mirror() { return $('#optMirror').checked; },
+  get smooth() { return +$('#optSmooth').value / 100; },
+  get jiggle() { return +$('#optJiggle').value / 100; },
+  get quality() { return $('#optQuality').value; },
+};
+// light: lite model / 640x480 · standard: full model / 1280x720 · high: heavy model / 1280x720
+const poseUrl = () => ({ light: MODEL_URLS.poseLite, standard: MODEL_URLS.poseFull, high: MODEL_URLS.poseHeavy })[opts.quality];
+$('#optSmooth').oninput = () => { $('#smoothOut').textContent = $('#optSmooth').value; };
+$('#optMirror').onchange = () => {
+  $('#pip').classList.toggle('mirror', opts.mirror);
+  resetFilters(); calib.torso = calib.hips = calib.head = null;
+};
+
+/* ---------------- Three.js stage ---------------- */
+const stage = $('#stage');
+const canvas = $('#three');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x171a23);
+scene.fog = new THREE.Fog(0x171a23, 6, 14);
+
+const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
+camera.position.set(0, 1.35, 2.2);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 1.2, 0);
+controls.enableDamping = true;
+controls.update();
+
+scene.add(new THREE.HemisphereLight(0xd6defc, 0x2a2420, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(1.4, 3, 2.2);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 2.5, bottom: -0.5, near: 0.5, far: 8 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x7cc4ff, 1.4);
+rim.position.set(-2, 2.2, -2);
+scene.add(rim);
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(2.4, 64), new THREE.MeshStandardMaterial({ color: 0x1e212b, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.635, 96), new THREE.MeshBasicMaterial({ color: 0x7cc4ff, transparent: true, opacity: 0.45 }));
+ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
+scene.add(ring);
+const grid = new THREE.GridHelper(8, 32, 0x2a2e3b, 0x20232d);
+grid.position.y = 0.001;
+scene.add(grid);
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(1, h);
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+/* camera view presets */
+let viewTween = null;
+function setView(name, instant = false) {
+  document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  const hy = avatar?.eyeLevel ?? avatar?.rest?.pos.head?.y ?? 1.5;
+  const presets = {
+    full:  { t: new V3(0, hy * 0.55, 0), p: new V3(0, hy * 0.62, hy * 2.6) },
+    upper: { t: new V3(0, hy * 0.86, 0), p: new V3(0, hy * 0.92, hy * 1.45) },
+    face:  { t: new V3(0, hy + 0.06, 0), p: new V3(0, hy + 0.08, 0.75) },
+  };
+  const v = avatar?.views?.[name] ? { t: new V3(...avatar.views[name].t), p: new V3(...avatar.views[name].p) } : presets[name];
+  if (instant) { controls.target.copy(v.t); camera.position.copy(v.p); controls.update(); return; }
+  viewTween = { t0: performance.now(), fromT: controls.target.clone(), fromP: camera.position.clone(), toT: v.t, toP: v.p };
+}
+let currentView = 'upper';
+document.querySelectorAll('.views button').forEach(b => b.onclick = () => { currentView = b.dataset.view; setView(currentView); });
+
+/* ---------------- Bone naming (VRM 1.0 humanoid names) ---------------- */
+const FINGER_DEFS = [
+  ['Thumb', ['Metacarpal', 'Proximal', 'Distal'], [1, 2, 3, 4]],
+  ['Index', ['Proximal', 'Intermediate', 'Distal'], [5, 6, 7, 8]],
+  ['Middle', ['Proximal', 'Intermediate', 'Distal'], [9, 10, 11, 12]],
+  ['Ring', ['Proximal', 'Intermediate', 'Distal'], [13, 14, 15, 16]],
+  ['Little', ['Proximal', 'Intermediate', 'Distal'], [17, 18, 19, 20]],
+];
+const AIMS = []; // [bone, child|null, prev|null]
+for (const s of SIDES) {
+  AIMS.push([s + 'UpperArm', s + 'LowerArm', null], [s + 'LowerArm', s + 'Hand', null]);
+  AIMS.push([s + 'UpperLeg', s + 'LowerLeg', null], [s + 'LowerLeg', s + 'Foot', null]);
+  for (const [f, segs] of FINGER_DEFS) {
+    const n = segs.map(g => s + f + g);
+    AIMS.push([n[0], n[1], null], [n[1], n[2], null], [n[2], null, n[1]]);
+  }
+}
+const CORE = ['hips', 'spine', 'chest', 'neck', 'head'];
+const ALL_BONES = [...new Set([...CORE, ...AIMS.flatMap(a => [a[0], a[1]]).filter(Boolean), 'leftHand', 'rightHand', 'leftFoot', 'rightFoot'])];
+
+/* ---------------- Procedural mannequin ---------------- */
+function buildMannequin() {
+  const root = new THREE.Group();
+  const bones = {};
+  const add = (n, p, x, y, z) => { const o = new THREE.Object3D(); o.name = n; o.position.set(x, y, z); (p ? bones[p] : root).add(o); bones[n] = o; return o; };
+  const skin = new THREE.MeshStandardMaterial({ color: 0xe8e3da, roughness: 0.5, metalness: 0.05 });
+  const joint = new THREE.MeshStandardMaterial({ color: 0x5c8dff, roughness: 0.35, metalness: 0.15 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x15171d, roughness: 0.25 });
+  const mesh = (g, m, parent, pos) => { const o = new THREE.Mesh(g, m); o.castShadow = true; if (pos) o.position.copy(pos); parent.add(o); return o; };
+  const seg = (parent, to, r, mat = skin) => {
+    const v = new V3(...to), len = v.length();
+    const o = mesh(new THREE.CapsuleGeometry(r, Math.max(0.002, len - r * 1.2), 6, 14), mat, parent, v.clone().multiplyScalar(0.5));
+    o.quaternion.setFromUnitVectors(UP, v.clone().normalize());
+    return o;
+  };
+  const ball = (parent, r, pos = [0, 0, 0], mat = joint) => mesh(new THREE.SphereGeometry(r, 18, 12), mat, parent, new V3(...pos));
+
+  add('hips', null, 0, 0.94, 0);
+  add('spine', 'hips', 0, 0.11, 0);
+  add('chest', 'spine', 0, 0.15, 0);
+  add('neck', 'chest', 0, 0.22, 0);
+  add('head', 'neck', 0, 0.07, 0);
+
+  ball(bones.hips, 1, [0, 0.0, 0], skin).scale.set(0.15, 0.085, 0.105);
+  seg(bones.spine, [0, 0.14, 0], 0.095).scale.set(1.2, 1, 0.95);
+  ball(bones.chest, 1, [0, 0.1, 0], skin).scale.set(0.185, 0.15, 0.115);
+  seg(bones.neck, [0, 0.07, 0], 0.042);
+  const head = ball(bones.head, 1, [0, 0.1, 0.005], skin); head.scale.set(0.105, 0.125, 0.11);
+  const eyes = {};
+  for (const [s, x] of [['left', 0.038], ['right', -0.038]]) {
+    const e = ball(bones.head, 1, [x, 0.115, 0.098], dark); e.scale.set(0.016, 0.022, 0.01);
+    eyes[s] = { mesh: e, x };
+  }
+  const mouth = ball(bones.head, 1, [0, 0.055, 0.1], dark); mouth.scale.set(0.028, 0.006, 0.01);
+
+  for (const [s, sx] of [['left', 1], ['right', -1]]) {
+    const U = s + 'UpperArm', L = s + 'LowerArm', H = s + 'Hand';
+    add(U, 'chest', sx * 0.165, 0.16, 0); ball(bones[U], 0.05);
+    add(L, U, sx * 0.27, 0, 0); seg(bones[U], [sx * 0.27, 0, 0], 0.042); ball(bones[L], 0.037);
+    add(H, L, sx * 0.25, 0, 0); seg(bones[L], [sx * 0.25, 0, 0], 0.034); ball(bones[H], 0.03);
+    mesh(new THREE.BoxGeometry(0.085, 0.026, 0.075), skin, bones[H], new V3(sx * 0.048, 0, 0));
+    const fdefs = {
+      Thumb: { base: [sx * 0.018, -0.008, 0.032], offs: [[sx * 0.026, -0.004, 0.026], [sx * 0.024, 0, 0.012], [sx * 0.02, 0, 0.007]], r: 0.0105 },
+      Index: { base: [sx * 0.09, 0, 0.027], offs: [[sx * 0.04, 0, 0], [sx * 0.026, 0, 0], [sx * 0.022, 0, 0]], r: 0.0095 },
+      Middle: { base: [sx * 0.092, 0, 0.008], offs: [[sx * 0.044, 0, 0], [sx * 0.029, 0, 0], [sx * 0.024, 0, 0]], r: 0.0095 },
+      Ring: { base: [sx * 0.088, 0, -0.011], offs: [[sx * 0.04, 0, 0], [sx * 0.026, 0, 0], [sx * 0.022, 0, 0]], r: 0.009 },
+      Little: { base: [sx * 0.08, 0, -0.029], offs: [[sx * 0.031, 0, 0], [sx * 0.021, 0, 0], [sx * 0.019, 0, 0]], r: 0.008 },
+    };
+    for (const [f, segs] of FINGER_DEFS) {
+      const d = fdefs[f];
+      const n = segs.map(g => s + f + g);
+      add(n[0], H, ...d.base);
+      add(n[1], n[0], ...d.offs[0]);
+      add(n[2], n[1], ...d.offs[1]);
+      seg(bones[n[0]], d.offs[0], d.r); seg(bones[n[1]], d.offs[1], d.r); seg(bones[n[2]], d.offs[2], d.r * 0.9);
+    }
+    const UL = s + 'UpperLeg', LL = s + 'LowerLeg', F = s + 'Foot';
+    add(UL, 'hips', sx * 0.09, -0.04, 0); ball(bones[UL], 0.062);
+    add(LL, UL, 0, -0.42, 0); seg(bones[UL], [0, -0.42, 0], 0.062); ball(bones[LL], 0.05);
+    add(F, LL, 0, -0.42, 0); seg(bones[LL], [0, -0.42, 0], 0.048); ball(bones[F], 0.04);
+    mesh(new THREE.BoxGeometry(0.085, 0.05, 0.2), skin, bones[F], new V3(0, -0.035, 0.05));
+  }
+  return {
+    name: 'マネキン', root,
+    bone: (n) => bones[n] || null,
+    expr(e) {
+      for (const s of SIDES) {
+        const b = e[s === 'left' ? 'blinkLeft' : 'blinkRight'] ?? 0;
+        eyes[s].mesh.scale.y = 0.022 * Math.max(0.12, 1 - b * 0.95) * (1 - (e.happy ?? 0) * 0.35);
+      }
+      const jaw = e.aa ?? 0, ou = e.ou ?? 0, smile = e.happy ?? 0;
+      mouth.scale.set(0.028 * (1 + smile * 0.5 - ou * 0.45), 0.006 + jaw * 0.026 + ou * 0.01, 0.01);
+    },
+    look(yaw, pitch) {
+      for (const s of SIDES) { eyes[s].mesh.position.x = eyes[s].x + THREE.MathUtils.clamp(yaw / 25, -1, 1) * 0.008; eyes[s].mesh.position.y = 0.115 + THREE.MathUtils.clamp(pitch / 20, -1, 1) * 0.005; }
+    },
+    update() {},
+    dispose() { root.traverse(o => { o.geometry?.dispose?.(); }); },
+  };
+}
+
+/* ---------------- VRM loader ---------------- */
+const gltfLoader = new GLTFLoader();
+gltfLoader.register(p => new VRMLoaderPlugin(p));
+async function loadVRM(url, name) {
+  note('VRMを読み込み中…');
+  $('#avatarName').textContent = `${name} を読み込み中…`;
+  const gltf = await gltfLoader.loadAsync(url, (ev) => { if (ev.total) $('#avatarName').textContent = `${name} を読み込み中… ${Math.round(ev.loaded / ev.total * 100)}%`; });
+  const vrm = gltf.userData.vrm;
+  if (!vrm) throw new Error('not-vrm');
+  VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  if (VRMUtils.combineSkeletons) VRMUtils.combineSkeletons(gltf.scene);
+  VRMUtils.rotateVRM0(vrm);
+  vrm.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+  vrm.humanoid.resetNormalizedPose();
+  const springJoints = vrm.springBoneManager ? [...vrm.springBoneManager.joints] : [];
+  springJoints.forEach(j => { j.__base = { ...j.settings }; });
+  note('');
+  return {
+    name, root: vrm.scene, vrm, springJoints,
+    bone: (n) => vrm.humanoid.getNormalizedBoneNode(n),
+    expr(e) { const em = vrm.expressionManager; if (!em) return; for (const k in e) if (em.getExpression(k)) em.setValue(k, e[k]); },
+    look(yaw, pitch) { if (vrm.lookAt) { vrm.lookAt.yaw = yaw; vrm.lookAt.pitch = pitch; } },
+    update(dt) { vrm.update(dt); },
+    dispose() { VRMUtils.deepDispose(vrm.scene); },
+  };
+}
+
+/* ---------------- Avatar + rest pose capture ---------------- */
+let avatar = null;
+function basisQuat(x, yApprox, out = new Q()) {
+  const X = x.clone().normalize();
+  const Z = new V3().crossVectors(X, yApprox).normalize();
+  const Y = new V3().crossVectors(Z, X);
+  return out.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+}
+function setAvatar(a) {
+  if (avatar) { scene.remove(avatar.root); avatar.dispose?.(); }
+  avatar = a;
+  scene.add(a.root);
+  a.root.updateMatrixWorld(true);
+  a.init?.();
+  applyJiggle();
+  const pos = {}, q0 = {};
+  for (const n of ALL_BONES) {
+    const b = a.bone(n);
+    if (b) { pos[n] = b.getWorldPosition(new V3()); q0[n] = b.getWorldQuaternion(new Q()); }
+  }
+  const dir = {};
+  for (const [n, child, prev] of AIMS) {
+    if (!pos[n]) continue;
+    let d = null;
+    if (child && pos[child]) d = pos[child].clone().sub(pos[n]);
+    else if (prev && pos[prev]) d = pos[n].clone().sub(pos[prev]);
+    if (d && d.lengthSq() > 1e-10) dir[n] = d.normalize().applyQuaternion(q0[n].clone().invert());
+  }
+  const sub = (a1, b1) => (pos[a1] && pos[b1]) ? pos[a1].clone().sub(pos[b1]) : null;
+  const basis = {
+    hips: basisQuat(sub('leftUpperLeg', 'rightUpperLeg') ?? new V3(1, 0, 0), UP),
+    chest: basisQuat(sub('leftUpperArm', 'rightUpperArm') ?? new V3(1, 0, 0), UP),
+  };
+  for (const s of SIDES) {
+    const fwd = sub(s + 'MiddleProximal', s + 'Hand') ?? sub(s + 'Hand', s + 'LowerArm') ?? new V3(s === 'left' ? 1 : -1, 0, 0);
+    const side = sub(s + 'IndexProximal', s + 'LittleProximal') ?? new V3(0, 0, 1);
+    basis[s + 'Hand'] = basisQuat(fwd, side);
+  }
+  a.rest = { pos, q0, dir, basis };
+  targets.clear(); vel.clear();
+  $('#avatarName').textContent = a.name;
+  $('#avatarCredit').textContent = a.credit ?? '';
+  setView(currentView, true);
+}
+
+/* ---------------- Solver primitives ---------------- */
+const _pw = new Q(), _tmp = new Q(), _swing = new Q(), _cur = new V3();
+function setWorld(name, W, alpha) {
+  const b = avatar.bone(name); if (!b || !b.parent) return;
+  b.parent.getWorldQuaternion(_pw);
+  _tmp.copy(_pw).invert().multiply(W);
+  b.quaternion.slerp(_tmp, alpha);
+}
+function aim(name, target, alpha) {
+  const b = avatar.bone(name), d = avatar.rest.dir[name];
+  if (!b || !d || !b.parent || target.lengthSq() < 1e-10) return;
+  b.parent.getWorldQuaternion(_pw);
+  _cur.copy(d).applyQuaternion(_pw);
+  _swing.setFromUnitVectors(_cur, target.clone().normalize());
+  _tmp.copy(_pw).invert().multiply(_swing).multiply(_pw);
+  b.quaternion.slerp(_tmp, alpha);
+}
+const IDENT = new Q();
+function relax(name, alpha) { const b = avatar.bone(name); if (b) b.quaternion.slerp(IDENT, alpha); }
+function worldFromBasis(name, T, restB) {
+  // W = T * restB^-1 * Q0
+  return T.clone().multiply(restB.clone().invert()).multiply(avatar.rest.q0[name] ?? IDENT);
+}
+const restArm = (s, lower) => new V3((s === 'left' ? 1 : -1) * (lower ? 0.1 : 0.2), -1, lower ? 0.2 : 0.05).normalize();
+
+/* ---------------- One Euro filter (jitter vs. latency) ---------------- */
+class OneEuro {
+  constructor() { this.x = null; this.dx = 0; this.t = 0; }
+  filter(v, t, minC, beta) {
+    if (this.x === null) { this.x = v; this.t = t; return v; }
+    const dt = Math.max(1e-3, t - this.t); this.t = t;
+    const a = (c) => 1 / (1 + 1 / (2 * Math.PI * c * dt));
+    this.dx += a(1) * ((v - this.x) / dt - this.dx);
+    this.x += a(minC + beta * Math.abs(this.dx)) * (v - this.x);
+    return this.x;
+  }
+}
+class PointsFilter {
+  constructor(beta) { this.f = []; this.beta = beta; }
+  apply(pts, t) {
+    const minC = 0.25 + 3.2 * (1 - opts.smooth) ** 2;
+    return pts.map((p, i) => {
+      const f = this.f[i] ??= [new OneEuro(), new OneEuro(), new OneEuro()];
+      return new V3(f[0].filter(p.x, t, minC, this.beta), f[1].filter(p.y, t, minC, this.beta), f[2].filter(p.z, t, minC, this.beta));
+    });
+  }
+  reset() { this.f = []; }
+}
+const filters = { pose: new PointsFilter(1.2), face: new PointsFilter(0.01), left: new PointsFilter(3), right: new PointsFilter(3) };
+function resetFilters() { Object.values(filters).forEach(f => f.reset()); }
+
+/* MediaPipe coords: x right / y down / z away from camera  →  avatar world: avatar faces +Z, its left is +X.
+   Mirror mode reflects X and swaps the sides that drive each limb. */
+const conv = (p) => ({ x: (opts.mirror ? -1 : 1) * p.x, y: -p.y, z: -p.z });
+const subjSide = (s) => opts.mirror ? (s === 'left' ? 'right' : 'left') : s;
+const PIDX = { shoulder: 11, elbow: 13, wrist: 15, pinky: 17, index: 19, thumb: 21, hip: 23, knee: 25, ankle: 27 };
+const pidx = (s, part) => PIDX[part] + (subjSide(s) === 'left' ? 0 : 1);
+
+const calib = { torso: null, hips: null, head: null };
+const lastRaw = { torso: null, hips: null, head: null };
+const seen = { pose: -1e9, face: -1e9, left: -1e9, right: -1e9 };
+const exprState = {};
+
+function solvePose(world, norm, t, alpha) {
+  const W = filters.pose.apply(world.map(conv), t);
+  const vis = (i) => norm[i].visibility ?? 1;
+  const P = (s, part) => W[pidx(s, part)];
+  const mid = (a, b) => a.clone().add(b).multiplyScalar(0.5);
+  const lSh = P('left', 'shoulder'), rSh = P('right', 'shoulder'), lHip = P('left', 'hip'), rHip = P('right', 'hip');
+  const torsoUp = mid(lSh, rSh).sub(mid(lHip, rHip));
+  const R = avatar.rest;
+
+  // hips: yaw only (seated users rarely show their hips clearly)
+  const hipLine = lHip.clone().sub(rHip); hipLine.y = 0;
+  const hipsT = basisQuat(hipLine.lengthSq() > 1e-6 ? hipLine : new V3(1, 0, 0), UP);
+  lastRaw.hips = hipsT.clone();
+  setWorld('hips', worldFromBasis('hips', hipsT, calib.hips ?? R.basis.hips), alpha);
+
+  // torso twist / lean spread over spine + chest
+  const torsoT = basisQuat(lSh.clone().sub(rSh), torsoUp);
+  lastRaw.torso = torsoT.clone();
+  const chestName = avatar.bone('chest') ? 'chest' : 'spine';
+  const chestW = worldFromBasis(chestName, torsoT, calib.torso ?? R.basis.chest);
+  if (chestName === 'chest' && avatar.bone('spine')) {
+    const hipsNow = avatar.bone('hips').getWorldQuaternion(new Q());
+    setWorld('spine', hipsNow.slerp(chestW, 0.5), alpha);
+  }
+  setWorld(chestName, chestW, alpha);
+
+  for (const s of SIDES) {
+    const sh = P(s, 'shoulder'), el = P(s, 'elbow'), wr = P(s, 'wrist');
+    const elOk = vis(pidx(s, 'elbow')) > 0.5, wrOk = vis(pidx(s, 'wrist')) > 0.45;
+    aim(s + 'UpperArm', elOk ? el.clone().sub(sh) : restArm(s, false), elOk ? alpha : alpha * 0.25);
+    aim(s + 'LowerArm', elOk && wrOk ? wr.clone().sub(el) : restArm(s, true), elOk && wrOk ? alpha : alpha * 0.25);
+    const handFresh = t - seen[s] < Math.max(0.25, gapOf('hands') * 2.5);
+    if (!handFresh && wrOk && vis(pidx(s, 'index')) > 0.5) {
+      const ix = P(s, 'index'), pk = P(s, 'pinky');
+      const T = basisQuat(mid(ix, pk).sub(wr), ix.clone().sub(pk));
+      setWorld(s + 'Hand', worldFromBasis(s + 'Hand', T, R.basis[s + 'Hand']), alpha * 0.6);
+    } else if (!handFresh) {
+      relax(s + 'Hand', alpha * 0.2);
+    }
+    if (!handFresh) for (const [f, segs] of FINGER_DEFS) for (const g of segs) relax(s + f + g, alpha * 0.2);
+
+    const kneeOk = opts.legs && vis(pidx(s, 'knee')) > 0.65 && vis(pidx(s, 'ankle')) > 0.6;
+    const hp = P(s, 'hip'), kn = P(s, 'knee'), an = P(s, 'ankle');
+    aim(s + 'UpperLeg', kneeOk ? kn.clone().sub(hp) : new V3(0, -1, 0), kneeOk ? alpha : alpha * 0.25);
+    aim(s + 'LowerLeg', kneeOk ? an.clone().sub(kn) : new V3(0, -1, 0), kneeOk ? alpha : alpha * 0.25);
+  }
+}
+
+function solveHand(s, world, t, alpha) {
+  const H = filters[s].apply(world.map(conv), t);
+  const R = avatar.rest;
+  const T = basisQuat(H[9].clone().sub(H[0]), H[5].clone().sub(H[17]));
+  setWorld(s + 'Hand', worldFromBasis(s + 'Hand', T, R.basis[s + 'Hand']), alpha);
+  for (const [f, segs, idx] of FINGER_DEFS) {
+    segs.forEach((g, k) => aim(s + f + g, H[idx[k + 1]].clone().sub(H[idx[k]]), alpha));
+  }
+}
+
+/* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
+   Find hand points (hand AI, or the body AI's wrist/finger points) over the face, near the mouth, near the eyes. */
+let faceHeld = -1e9, jumpRejects = 0;
+function handPointsNorm() {
+  const pts = [];
+  for (const hl of latest.hands?.landmarks ?? []) for (const i of [0, 2, 4, 5, 8, 9, 12, 13, 16, 17, 20]) pts.push(hl[i]);
+  const pl = latest.body?.landmarks?.[0];
+  if (pl) for (const i of [15, 16, 17, 18, 19, 20, 21, 22]) if ((pl[i].visibility ?? 1) > 0.5) pts.push(pl[i]);
+  return pts;
+}
+function faceOcclusion(lms) {
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  for (let i = 0; i < lms.length; i += 6) { const p = lms[i]; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+  const w = x1 - x0, h = y1 - y0;
+  const mouth = { x: (lms[13].x + lms[14].x) / 2, y: (lms[13].y + lms[14].y) / 2 };
+  const eyes = [lms[159], lms[386]];
+  let inFace = 0, mouthNear = false, eyesNear = false;
+  for (const p of handPointsNorm()) {
+    if (p.x > x0 - 0.04 * w && p.x < x1 + 0.04 * w && p.y > y0 - 0.04 * h && p.y < y1 + 0.04 * h) inFace++;
+    if (Math.hypot(p.x - mouth.x, p.y - mouth.y) < 0.33 * w) mouthNear = true;
+    for (const e of eyes) if (Math.hypot(p.x - e.x, p.y - e.y) < 0.22 * w) eyesNear = true;
+  }
+  return { face: inFace >= 2, mouth: mouthNear, eyes: eyesNear };
+}
+function handNearNoseByPose() {
+  const pl = latest.body?.landmarks?.[0]; if (!pl) return false;
+  const shoulder = Math.hypot(pl[11].x - pl[12].x, pl[11].y - pl[12].y);
+  return [15, 16, 19, 20].some(i => (pl[i].visibility ?? 1) > 0.5 && Math.hypot(pl[i].x - pl[0].x, pl[i].y - pl[0].y) < 0.55 * shoulder);
+}
+
+function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: false, eyes: false }) {
+  const pick = [33, 263, 10, 152];
+  const raw = pick.map(i => conv({ x: (lms[i].x - 0.5) * vw, y: (lms[i].y - 0.5) * vh, z: lms[i].z * vw }));
+  if (occ.face) {
+    // hold the head where it was; restart the filter so stale values don't drag it when the hand moves away
+    filters.face.reset();
+  } else {
+    const [eR, eL, top, chin] = filters.face.apply(raw, t); // eR = subject's right eye outer, eL = subject's left
+    const avLeftEye = subjSide('left') === 'left' ? eL : eR;
+    const avRightEye = avLeftEye === eL ? eR : eL;
+    const headT = basisQuat(avLeftEye.clone().sub(avRightEye), top.clone().sub(chin));
+    // a sudden jump of more than ~25° in one result is almost always a bad read: skip up to two in a row
+    const jump = lastRaw.head && headT.angleTo(lastRaw.head) > 0.45;
+    if (jump && jumpRejects < 2) jumpRejects++;
+    else {
+      jumpRejects = 0;
+      lastRaw.head = headT.clone();
+      const headW = worldFromBasis('head', headT, calib.head ?? new Q());
+      if (avatar.bone('neck')) {
+        const parentNow = avatar.bone('neck').parent.getWorldQuaternion(new Q());
+        setWorld('neck', parentNow.slerp(headW, 0.4), alpha);
+      }
+      setWorld('head', headW, alpha);
+    }
+  }
+
+  const b = {};
+  for (const c of blend) b[c.categoryName] = c.score;
+  const g = (n) => b[n] ?? 0;
+  const ramp = (v, lo, hi) => THREE.MathUtils.clamp((v - lo) / (hi - lo), 0, 1);
+  const subj = (side, base) => g(base + (subjSide(side) === 'left' ? 'Left' : 'Right'));
+  const target = {
+    blinkLeft: ramp(subj('left', 'eyeBlink'), 0.25, 0.65),
+    blinkRight: ramp(subj('right', 'eyeBlink'), 0.25, 0.65),
+    aa: ramp(g('jawOpen'), 0.06, 0.55),
+    ou: ramp(g('mouthPucker'), 0.25, 0.85) * 0.8,
+    oh: ramp(g('mouthFunnel'), 0.15, 0.6) * 0.7,
+    happy: ramp((g('mouthSmileLeft') + g('mouthSmileRight')) / 2, 0.25, 0.75),
+  };
+  // link blinks slightly so a single noisy eye doesn't wink
+  const avg = (target.blinkLeft + target.blinkRight) / 2;
+  target.blinkLeft = target.blinkLeft * 0.6 + avg * 0.4;
+  target.blinkRight = target.blinkRight * 0.6 + avg * 0.4;
+  // hand near the mouth: keep the mouth as it was (otherwise a hand touching the chin "talks")
+  if (occ.mouth || occ.face) for (const k of ['aa', 'ou', 'oh', 'happy']) delete target[k];
+  if (occ.eyes) { delete target.blinkLeft; delete target.blinkRight; }
+  for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
+  avatar.expr(exprState);
+  if (occ.eyes || occ.face) return;
+
+  const lookSubjLeft = ((g('eyeLookOutLeft') + g('eyeLookInRight')) - (g('eyeLookOutRight') + g('eyeLookInLeft'))) / 2;
+  const lookUp = (g('eyeLookUpLeft') + g('eyeLookUpRight') - g('eyeLookDownLeft') - g('eyeLookDownRight')) / 2;
+  avatar.look((opts.mirror ? -1 : 1) * lookSubjLeft * 25, lookUp * 15);
+}
+
+function idle(dt, now) {
+  const a = 1 - Math.exp(-dt * 3);
+  // "lost" must outlast the gap between AI results, or slow PCs would snap back to the rest pose between frames
+  const poseLost = now - seen.pose > Math.max(0.6, gapOf('body') * 3 + 0.5);
+  if (poseLost || !opts.body) {
+    for (const n of ['hips', 'spine', 'chest']) relax(n, a);
+    for (const s of SIDES) {
+      aim(s + 'UpperArm', restArm(s, false), a); aim(s + 'LowerArm', restArm(s, true), a);
+      relax(s + 'Hand', a);
+      for (const [f, segs] of FINGER_DEFS) for (const g of segs) relax(s + f + g, a);
+      aim(s + 'UpperLeg', new V3(0, -1, 0), a); aim(s + 'LowerLeg', new V3(0, -1, 0), a);
+    }
+    const breathe = Math.sin(now * 1.6) * 0.012;
+    const c = avatar.bone('chest') || avatar.bone('spine');
+    if (c) c.quaternion.multiply(_tmp.setFromAxisAngle(new V3(1, 0, 0), breathe * a));
+  }
+  // while a hand covers the face, hold the last pose instead of returning to rest (at most 4 s)
+  const faceSeen = Math.max(seen.face, Math.min(faceHeld, seen.face + 4));
+  if (now - faceSeen > Math.max(0.6, gapOf('face') * 3 + 0.5) || !opts.face) {
+    relax('neck', a); relax('head', a);
+    for (const k in exprState) exprState[k] *= 1 - a;
+    avatar.expr(exprState);
+    avatar.look(0, 0);
+  }
+}
+
+$('#calibBtn').onclick = () => {
+  if (!lastRaw.torso && !lastRaw.head) { toast('まだ記憶できません', 'カメラを開始して、体か顔が認識されてから押してください。', 'info'); return; }
+  if (lastRaw.torso) { calib.torso = lastRaw.torso.clone(); calib.hips = lastRaw.hips.clone(); }
+  if (lastRaw.head) calib.head = lastRaw.head.clone();
+  toast('正面を記憶しました', '今の姿勢がアバターの「まっすぐ」になります。ミラーを切り替えるとリセットされます。', 'info');
+  setTimeout(() => { $('#toast').hidden = true; }, 2500);
+};
+
+/* ---------------- MediaPipe ---------------- */
+/* These two functions are self-contained on purpose: they are also stringified into the Web Workers. */
+async function mpCreate(vision, fileset, part, url, delegate) {
+  const base = { baseOptions: { modelAssetPath: url, delegate }, runningMode: 'VIDEO' };
+  if (part === 'body') return vision.PoseLandmarker.createFromOptions(fileset, { ...base, numPoses: 1, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+  if (part === 'face') return vision.FaceLandmarker.createFromOptions(fileset, { ...base, numFaces: 1, outputFaceBlendshapes: true });
+  return vision.HandLandmarker.createFromOptions(fileset, { ...base, numHands: 2, minHandDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+}
+function mpRun(lm, part, src, ts) {
+  const r = lm.detectForVideo(src, ts);
+  if (part === 'body') return { landmarks: r.landmarks, worldLandmarks: r.worldLandmarks };
+  if (part === 'face') return { faceLandmarks: r.faceLandmarks, faceBlendshapes: r.faceBlendshapes };
+  return { landmarks: r.landmarks, worldLandmarks: r.worldLandmarks, handedness: r.handedness };
+}
+
+/* Engine A: one Web Worker per model, so body / face / hands run at the same time instead of queuing.
+   Each worker also times GPU vs CPU on real frames and keeps the faster one (integrated GPUs often lose on small models). */
+const WORKER_SRC = `
+const mpCreate = ${mpCreate.toString()};
+const mpRun = ${mpRun.toString()};
+let vision, fileset, part, url, lm = null, delegate = 'GPU';
+const WARMUP = 8, SAMPLES = 24;
+let trial = { GPU: [], CPU: [] }, decided = false, switching = false, warm = 0;
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+async function use(d) {
+  const next = await mpCreate(vision, fileset, part, url, d);
+  const old = lm; lm = next; delegate = d; warm = 0;
+  if (old) old.close();
+}
+async function maybeSwitch() {
+  if (decided || switching) return;
+  const cur = trial[delegate];
+  if (cur.length < SAMPLES) return;
+  switching = true;
+  try {
+    if (delegate === 'GPU' && !trial.CPU.length) {
+      try { await use('CPU'); } catch (e) { decided = true; }
+    } else {
+      decided = true;
+      const best = !trial.GPU.length ? 'CPU' : !trial.CPU.length ? 'GPU' : (median(trial.GPU) <= median(trial.CPU) ? 'GPU' : 'CPU');
+      if (best !== delegate) await use(best);
+    }
+  } finally { switching = false; }
+}
+self.onmessage = async (e) => {
+  const m = e.data;
+  try {
+    if (m.type === 'init') {
+      part = m.part; url = m.url;
+      vision = await import(m.base + '/vision_bundle.mjs');
+      fileset = await vision.FilesetResolver.forVisionTasks(m.base + '/wasm');
+      try { await use('GPU'); } catch (err) { await use('CPU'); decided = true; }
+      postMessage({ type: 'ready', delegate });
+    } else if (m.type === 'frame') {
+      const t0 = performance.now();
+      const result = mpRun(lm, part, m.bitmap, m.ts);
+      const ms = performance.now() - t0;
+      m.bitmap.close();
+      if (++warm > WARMUP && !decided) trial[delegate].push(ms);
+      postMessage({ type: 'result', id: m.id, result, ms, delegate, deciding: !decided });
+      maybeSwitch();
+    } else if (m.type === 'setUrl') {
+      url = m.url;
+      await use(delegate);
+      postMessage({ type: 'result', id: m.id });
+    }
+  } catch (err) {
+    if (m.bitmap) m.bitmap.close();
+    postMessage({ type: m.type === 'init' ? 'error' : 'result', id: m.id, message: String(err && err.message || err) });
+  }
+};`;
+
+const PARTS = ['body', 'face', 'hands'];
+const PART_LABEL = { body: '体', face: '顔', hands: '手' };
+const partUrl = (p) => p === 'body' ? poseUrl() : p === 'face' ? MODEL_URLS.face : MODEL_URLS.hand;
+
+function createWorkerPart(part) {
+  return new Promise((resolve, reject) => {
+    const w = new Worker(URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' })));
+    const pending = new Map();
+    let nextId = 1;
+    const call = (msg, transfer) => new Promise((res) => { const id = nextId++; pending.set(id, res); w.postMessage({ ...msg, id }, transfer || []); });
+    const timer = setTimeout(() => { w.terminate(); reject(new Error('worker init timeout')); }, 180000);
+    const P = {
+      part, delegate: '', busy: false, deciding: true,
+      async detect(video, ts) {
+        const bitmap = await createImageBitmap(video);
+        return call({ type: 'frame', ts, bitmap }, [bitmap]);
+      },
+      setUrl(url) { return call({ type: 'setUrl', url }); },
+      terminate() { w.terminate(); },
+    };
+    w.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'ready') { clearTimeout(timer); P.delegate = m.delegate; resolve(P); }
+      else if (m.type === 'error') { clearTimeout(timer); w.terminate(); reject(new Error(m.message)); }
+      else if (m.type === 'result') { const r = pending.get(m.id); pending.delete(m.id); r?.(m); }
+    };
+    w.onerror = (e) => { clearTimeout(timer); w.terminate(); reject(new Error(e.message || 'worker error')); };
+    w.postMessage({ type: 'init', base: MP_BASE, part, url: partUrl(part) });
+  });
+}
+async function createWorkerEngine() {
+  if (typeof createImageBitmap !== 'function') throw new Error('no createImageBitmap');
+  const done = {};
+  const show = () => note('AIモデルを読み込み中… ' + PARTS.map(p => PART_LABEL[p] + (done[p] ? '✓' : '…')).join(' '));
+  show();
+  const results = await Promise.allSettled(PARTS.map(p => createWorkerPart(p).then(P => { done[p] = true; show(); return P; })));
+  if (results.some(r => r.status === 'rejected')) {
+    results.forEach(r => r.status === 'fulfilled' && r.value.terminate());
+    throw results.find(r => r.status === 'rejected').reason;
+  }
+  return { kind: 'worker', parts: Object.fromEntries(results.map((r, i) => [PARTS[i], r.value])) };
+}
+
+/* Engine B: everything on the main thread (fallback when workers can't load the AI) */
+async function createMainEngine() {
+  const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
+  const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+  const parts = {};
+  for (const p of PARTS) {
+    note(`AIモデルを読み込み中（${PART_LABEL[p]}）…`);
+    let delegate = 'GPU', lm;
+    try { lm = await mpCreate(vision, fileset, p, partUrl(p), 'GPU'); }
+    catch (e) { delegate = 'CPU'; lm = await mpCreate(vision, fileset, p, partUrl(p), 'CPU'); }
+    parts[p] = {
+      part: p, delegate, busy: false, deciding: false,
+      async detect(video, ts) { const t0 = performance.now(); const result = mpRun(lm, p, video, ts); return { result, ms: performance.now() - t0, delegate }; },
+      async setUrl(url) { const old = lm; lm = await mpCreate(vision, fileset, p, url, delegate); old.close(); },
+    };
+  }
+  return { kind: 'main', parts };
+}
+
+let engine = null, engineLoading = null, enginePoseUrl = null;
+async function loadEngine() {
+  if (engine) return engine;
+  if (engineLoading) return engineLoading;
+  engineLoading = (async () => {
+    note('AIエンジンを読み込み中…');
+    enginePoseUrl = poseUrl();
+    try { engine = await createWorkerEngine(); }
+    catch (e) {
+      console.warn('worker engine unavailable, using main thread', e);
+      engine = await createMainEngine();
+    }
+    note('');
+    return engine;
+  })();
+  try { return await engineLoading; }
+  catch (e) { engineLoading = null; throw e; }
+}
+
+
+/* ---------------- Input sources ---------------- */
+const video = $('#video');
+let stream = null, running = false;
+function stopStream() { stream?.getTracks().forEach(t => t.stop()); stream = null; }
+async function ensureEngine() {
+  try { await loadEngine(); return true; }
+  catch (e) {
+    console.error(e); note('');
+    toast('AIモデルを読み込めませんでした', 'モデルはインターネットから取得します。接続を確認してから、もう一度押してください。社内ネットワークなどでCDNが遮断されている場合も起こります。');
+    return false;
+  }
+}
+async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast('この開き方ではカメラを使えません', 'ブラウザは安全な場所（https か localhost）のページにだけカメラを許可します。下の README の「ローカルサーバーで開く」手順を試してください。');
+    return;
+  }
+  $('#startBtn').disabled = $('#camBtn').disabled = true;
+  try {
+    if (!(await ensureEngine())) return;
+    note('カメラを起動中…');
+    stopStream();
+    const dev = $('#camSelect').value;
+    // body/face models shrink frames internally, but hands are small in the frame: fingers need the higher resolution
+    const big = opts.quality !== 'light';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: dev ? { exact: dev } : undefined, facingMode: dev ? undefined : 'user', width: { ideal: big ? 1280 : 640 }, height: { ideal: big ? 720 : 480 }, frameRate: { ideal: 30 } } });
+    } catch (e) {
+      // some camera drivers reject the requested resolution and report it as NotReadableError; retry with browser defaults
+      if (e.name !== 'NotReadableError' && e.name !== 'OverconstrainedError' && e.name !== 'AbortError') throw e;
+      console.warn('retrying camera with default constraints', e);
+      await new Promise(r => setTimeout(r, 500));
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: dev ? { deviceId: { exact: dev } } : true });
+    }
+    video.srcObject = stream; video.removeAttribute('src'); video.loop = false;
+    await video.play();
+    onSourceStarted('カメラ');
+    listCameras();
+  } catch (e) {
+    console.error(e);
+    const map = {
+      NotAllowedError: ['カメラの使用が許可されていません', 'アドレスバー左のカメラアイコン（または鍵アイコン）から、このページのカメラを「許可」に変えてから、もう一度押してください。'],
+      NotFoundError: ['カメラが見つかりません', 'PCにカメラが接続されているか、OSの設定でブラウザのカメラ使用が許可されているか確認してください。'],
+      NotReadableError: ['カメラを開けませんでした（他のアプリが使用中の可能性）', 'Teams・Zoom・Discord・OBSなどがタスクバーの隅で起動したままになっていないか確認して終了してください。このページを別タブでも開いていたら閉じてください。右の「入力」でカメラを切り替えると直ることもあります（顔認証用の赤外線カメラは使えません）。'],
+      OverconstrainedError: ['選んだカメラを開けません', '「既定のカメラ」を選んで試してください。'],
+    };
+    const [t, b] = map[e.name] ?? ['カメラを開始できませんでした', String(e.message || e)];
+    toast(t, b);
+  } finally {
+    note('');
+    $('#startBtn').disabled = $('#camBtn').disabled = false;
+  }
+}
+async function startVideoFile(file) {
+  if (!file) return;
+  if (!(await ensureEngine())) return;
+  stopStream();
+  video.srcObject = null;
+  video.src = URL.createObjectURL(file);
+  video.loop = true;
+  try { await video.play(); onSourceStarted('動画: ' + file.name); }
+  catch (e) { toast('動画を再生できませんでした', 'このブラウザが対応していない形式の可能性があります。mp4 (H.264) か webm を試してください。'); }
+}
+function onSourceStarted(label) {
+  running = true;
+  resetFilters();
+  $('#intro').hidden = true;
+  $('#pip').hidden = false;
+  $('#pipLabel').textContent = label;
+  $('#camBtn').textContent = 'カメラ再起動';
+}
+async function listCameras() {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const sel = $('#camSelect'), cur = sel.value;
+    sel.innerHTML = '<option value="">既定のカメラ</option>' + devs.map((d, i) => `<option value="${d.deviceId}">${(d.label || 'カメラ ' + (i + 1)).replace(/[<>&"]/g, '')}</option>`).join('');
+    sel.value = cur;
+  } catch {}
+}
+$('#startBtn').onclick = startCamera;
+$('#camBtn').onclick = startCamera;
+$('#camSelect').onchange = () => { if (stream) startCamera(); };
+$('#videoFile').onchange = (e) => startVideoFile(e.target.files[0]);
+$('#videoFile2').onchange = (e) => startVideoFile(e.target.files[0]);
+
+/* avatar buttons */
+async function tryLoadVRM(url, name, credit) {
+  try { const a = await loadVRM(url, name); a.credit = credit; setAvatar(a); return true; }
+  catch (e) {
+    console.error(e); note('');
+    $('#avatarName').textContent = avatar?.name ?? '—';
+    if (e.message === 'not-vrm') toast('VRMとして読めませんでした', 'ファイルは .vrm 形式（VRoid Studio などで書き出したもの）を選んでください。');
+    else toast('VRMを読み込めませんでした', 'ファイルが壊れているか、ダウンロードに失敗しました。配布モデルの場合はインターネット接続を確認してください。');
+    return false;
+  }
+}
+$('#mannequinBtn').onclick = () => { setAvatar(buildMannequin()); currentModelId = null; $('#curThumb').style.backgroundImage = ''; };
+/* model picker */
+const dlg = $('#browser');
+let currentModelId = null;
+function renderPicker() {
+  const grid = $('#brGrid');
+  grid.textContent = '';
+  for (const m of MODELS) {
+    const card = document.createElement('button');
+    card.type = 'button'; card.className = 'br-card';
+    card.setAttribute('aria-current', String(m.id === currentModelId));
+    const th = document.createElement('div'); th.className = 'th';
+    const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''; img.src = m.thumb;
+    img.onerror = () => { img.remove(); th.textContent = m.name; };
+    th.append(img);
+    const lic = document.createElement('i'); lic.className = 'lic'; lic.textContent = m.lic;
+    const nm = document.createElement('span'); nm.textContent = m.name;
+    card.append(th, lic, nm);
+    card.onclick = () => { dlg.close(); loadModel(m); };
+    grid.append(card);
+  }
+}
+async function loadModel(m) {
+  if (await tryLoadVRM(m.url, m.name, m.credit)) { currentModelId = m.id; $('#curThumb').style.backgroundImage = `url("${m.thumb}")`; }
+}
+$('#pickBtn').onclick = () => { renderPicker(); dlg.showModal(); };
+$('#brClose').onclick = () => dlg.close();
+dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+$('#vrmFile').onchange = async (e) => { const f = e.target.files[0]; if (f && await tryLoadVRM(URL.createObjectURL(f), f.name, '自分のファイル')) { currentModelId = null; $('#curThumb').style.backgroundImage = ''; } };
+
+/* ---------------- Overlay drawing ---------------- */
+const overlay = $('#overlay'), octx = overlay.getContext('2d');
+const POSE_LINES = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28], [15, 19], [16, 20]];
+const HAND_LINES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
+function drawOverlay(poseRes, faceRes, handRes) {
+  const w = video.videoWidth, h = video.videoHeight;
+  if (overlay.width !== w || overlay.height !== h) { overlay.width = w; overlay.height = h; }
+  octx.clearRect(0, 0, w, h);
+  const lw = Math.max(2, w / 320);
+  const line = (pts, pairs, color, visMin = 0) => {
+    octx.strokeStyle = color; octx.lineWidth = lw; octx.beginPath();
+    for (const [a, b] of pairs) {
+      if ((pts[a].visibility ?? 1) < visMin || (pts[b].visibility ?? 1) < visMin) continue;
+      octx.moveTo(pts[a].x * w, pts[a].y * h); octx.lineTo(pts[b].x * w, pts[b].y * h);
+    }
+    octx.stroke();
+  };
+  if (poseRes?.landmarks?.[0]) line(poseRes.landmarks[0], POSE_LINES, 'rgba(124,196,255,.9)', 0.5);
+  if (handRes?.landmarks) for (const hl of handRes.landmarks) {
+    line(hl, HAND_LINES, 'rgba(95,211,154,.95)');
+    octx.fillStyle = '#fff';
+    for (const p of hl) { octx.beginPath(); octx.arc(p.x * w, p.y * h, lw * 1.1, 0, 7); octx.fill(); }
+  }
+  if (faceRes?.faceLandmarks?.[0]) {
+    octx.fillStyle = 'rgba(242,181,68,.85)';
+    const f = faceRes.faceLandmarks[0];
+    for (let i = 0; i < f.length; i += 4) { octx.fillRect(f[i].x * w - 1, f[i].y * h - 1, 2, 2); }
+  }
+}
+
+/* ---------------- Main loop ---------------- */
+const chips = { body: $('#chipBody'), face: $('#chipFace'), left: $('#chipLH'), right: $('#chipRH') };
+let frameCount = 0, statT = performance.now();
+const clock = new THREE.Clock();
+
+/* Bone interpolation: each AI result sets *target* rotations; every render frame eases the shown pose toward them.
+   This keeps the avatar moving at the display rate even when the AI only delivers ~15-30 results per second. */
+const targets = new Map();
+function withTargets(fn) {
+  if (!avatar) return;
+  const shown = [];
+  for (const n of ALL_BONES) {
+    const b = avatar.bone(n); if (!b) continue;
+    shown.push([n, b, b.quaternion.clone()]);
+    const t = targets.get(n); if (t) b.quaternion.copy(t);
+  }
+  fn();
+  for (const [n, b, q] of shown) { targets.set(n, b.quaternion.clone()); b.quaternion.copy(q); }
+}
+/* Each joint follows its target like a damped spring (rotation version of mass + spring + damper).
+   damping ratio 1 = no overshoot; lower = overshoots and wobbles back ("ぷるぷる"). */
+const vel = new Map();
+const _qe = new Q(), _qd = new Q(), _ev = new V3(), _ax = new V3();
+function easeToTargets(dt) {
+  const w0 = 12 + 34 * (1 - opts.smooth);      // natural frequency [rad/s]
+  const zeta = 1 - 0.72 * opts.jiggle;          // damping ratio
+  const kk = w0 * w0, cc = 2 * zeta * w0;
+  const steps = Math.max(1, Math.ceil(dt * 240)), h = dt / steps;
+  for (const [n, t] of targets) {
+    const b = avatar.bone(n); if (!b) continue;
+    let v = vel.get(n); if (!v) { v = new V3(); vel.set(n, v); }
+    for (let i = 0; i < steps; i++) {
+      _qe.copy(t).multiply(_qd.copy(b.quaternion).invert());
+      if (_qe.w < 0) { _qe.x = -_qe.x; _qe.y = -_qe.y; _qe.z = -_qe.z; _qe.w = -_qe.w; }
+      const sn = Math.hypot(_qe.x, _qe.y, _qe.z);
+      _ev.set(_qe.x, _qe.y, _qe.z).multiplyScalar(sn > 1e-8 ? 2 * Math.atan2(sn, _qe.w) / sn : 2); // rotation error as a vector
+      v.addScaledVector(_ev, kk * h).multiplyScalar(1 / (1 + cc * h));                          // spring + implicit damper
+      const wl = v.length();
+      if (wl > 1e-9) { _qd.setFromAxisAngle(_ax.copy(v).divideScalar(wl), wl * h); b.quaternion.premultiply(_qd).normalize(); }
+    }
+  }
+}
+function applyJiggle() {
+  const j = opts.jiggle;
+  for (const joint of avatar?.springJoints ?? []) {
+    joint.settings.stiffness = joint.__base.stiffness * (1.5 - 1.2 * j);
+    joint.settings.dragForce = THREE.MathUtils.clamp(joint.__base.dragForce * (1.5 - 1.1 * j), 0.05, 1);
+  }
+}
+$('#optJiggle').oninput = () => { $('#jiggleOut').textContent = $('#optJiggle').value; applyJiggle(); };
+
+const partStat = { body: {}, face: {}, hands: {} }; // ms (EMA), gap between results (EMA), count, delegate
+const latest = { body: null, face: null, hands: null };
+let frameNo = 0;
+function pump() {
+  if (!running || !engine || !avatar || video.readyState < 2) return;
+  const vt = video.currentTime;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  for (const p of PARTS) {
+    const P = engine.parts[p];
+    if (!opts[p]) { latest[p] = null; continue; }
+    if (P.busy || P.lastVT === vt) continue;
+    P.lastVT = vt;
+    // light mode: hands on every other camera frame
+    if (p === 'hands' && opts.quality === 'light' && (P.skip = !P.skip)) continue;
+    let ts = performance.now(); if (ts <= (P.lastTs ?? 0)) ts = P.lastTs + 1; P.lastTs = ts;
+    P.busy = true;
+    P.detect(video, ts)
+      .then((m) => {
+        if (m.message) { console.warn(p, m.message); return; }
+        const st = partStat[p], now = performance.now() / 1000;
+        st.ms = st.ms == null ? m.ms : st.ms * 0.8 + m.ms * 0.2;
+        if (st.at) st.gap = (st.gap ?? 0.05) * 0.8 + (now - st.at) * 0.2;
+        st.at = now; st.count = (st.count ?? 0) + 1; st.delegate = m.delegate; st.deciding = m.deciding;
+        latest[p] = m.result;
+        withTargets(() => onPart(p, m.result, ts / 1000, vw, vh));
+        drawOverlay(latest.body, latest.face, latest.hands);
+      })
+      .catch((e) => console.error(e))
+      .finally(() => { P.busy = false; });
+  }
+}
+const gapOf = (p) => partStat[p].gap ?? 0.05;
+
+function onPart(p, res, t, vw, vh) {
+  const alpha = 1;
+  if (p === 'body') {
+    const ok = !!res?.worldLandmarks?.[0];
+    if (ok) { seen.pose = t; solvePose(res.worldLandmarks[0], res.landmarks[0], t, alpha); } else filters.pose.reset();
+    chips.body.classList.toggle('on', ok);
+  } else if (p === 'face') {
+    const ok = !!res?.faceLandmarks?.[0];
+    let held = false;
+    if (ok) {
+      const occ = faceOcclusion(res.faceLandmarks[0]);
+      held = occ.face || occ.mouth || occ.eyes;
+      if (occ.face) faceHeld = t;
+      seen.face = t;
+      solveFace(res.faceLandmarks[0], res.faceBlendshapes?.[0]?.categories ?? [], t, alpha, vw, vh, occ);
+    } else {
+      filters.face.reset();
+      if (handNearNoseByPose()) { faceHeld = t; held = true; }
+    }
+    chips.face.classList.toggle('on', ok && !held);
+    chips.face.classList.toggle('hold', held);
+    chips.face.title = held ? '手で隠れているので顔の動きを止めています' : '';
+  } else {
+    // assign detected hands to the subject's left / right using the pose wrists (more reliable than the handedness label)
+    const handsBySubj = {};
+    const pl = latest.body?.landmarks?.[0];
+    (res?.landmarks ?? []).forEach((hl, i) => {
+      let subj;
+      if (pl) {
+        const d = (j) => Math.hypot(pl[j].x - hl[0].x, pl[j].y - hl[0].y);
+        subj = d(15) < d(16) ? 'left' : 'right';
+      } else {
+        // the label assumes a mirrored image; our frames are not mirrored, so it is flipped
+        subj = res.handedness?.[i]?.[0]?.categoryName === 'Left' ? 'right' : 'left';
+      }
+      if (!handsBySubj[subj]) handsBySubj[subj] = res.worldLandmarks[i];
+    });
+    for (const s of SIDES) {
+      const hw = handsBySubj[subjSide(s)];
+      if (hw) { seen[s] = t; solveHand(s, hw, t, alpha); } else filters[s].reset();
+    }
+    chips.left.classList.toggle('on', !!handsBySubj.left);
+    chips.right.classList.toggle('on', !!handsBySubj.right);
+  }
+}
+
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const now = performance.now() / 1000;
+  frameCount++;
+  if (avatar) {
+    pump();
+    withTargets(() => idle(dt, now));
+    easeToTargets(dt);
+    avatar.update(dt);
+  }
+  if (viewTween) {
+    const k = Math.min(1, (performance.now() - viewTween.t0) / 600), e = 1 - (1 - k) ** 3;
+    controls.target.lerpVectors(viewTween.fromT, viewTween.toT, e);
+    camera.position.lerpVectors(viewTween.fromP, viewTween.toP, e);
+    if (k >= 1) viewTween = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  const ms = performance.now() - statT;
+  if (ms > 1000) {
+    const rate = (p) => { const c = partStat[p].count ?? 0; partStat[p].count = 0; return Math.round(c * 1000 / ms); };
+    const rates = running && engine ? PARTS.filter(p => opts[p]).map(p => `${PART_LABEL[p]}${rate(p)}`).join(' ') : '—';
+    $('#meter').textContent = `推定 ${rates} fps · 描画 ${Math.round(frameCount * 1000 / ms)} fps${engine ? ` · ${engine.kind === 'worker' ? '並列' : '単一'}` : ''}`;
+    if (running && engine) {
+      const f = (p) => partStat[p].ms != null ? `${PART_LABEL[p]} ${partStat[p].delegate} ${partStat[p].ms.toFixed(0)}ms` : null;
+      const deciding = PARTS.some(p => partStat[p].deciding);
+      $('#perfDetail').textContent = '1回の推定: ' + PARTS.map(f).filter(Boolean).join(' / ') + (deciding ? '（GPUとCPUの速さを比較中…）' : '');
+    }
+    frameCount = 0; statT = performance.now();
+  }
+}
+
+/* ---------------- Recording ---------------- */
+let recorder = null, recChunks = [], recStart = 0, recTimer = null;
+$('#recBtn').onclick = () => {
+  if (recorder) { recorder.stop(); return; }
+  if (!canvas.captureStream || typeof MediaRecorder === 'undefined') { toast('このブラウザは録画に対応していません', 'Chrome か Edge の最新版で試してください。'); return; }
+  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  recorder = new MediaRecorder(canvas.captureStream(30), mimeType ? { mimeType, videoBitsPerSecond: 8e6 } : undefined);
+  recChunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    clearInterval(recTimer);
+    const blob = new Blob(recChunks, { type: recorder.mimeType || 'video/webm' });
+    const a = document.createElement('a');
+    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    a.href = URL.createObjectURL(blob);
+    a.download = `mocap-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${(recorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm'}`;
+    a.click();
+    recorder = null;
+    $('#recBtn').setAttribute('aria-pressed', 'false');
+    $('#recLabel').textContent = '3D画面を録画';
+  };
+  recorder.start(500);
+  recStart = performance.now();
+  $('#recBtn').setAttribute('aria-pressed', 'true');
+  recTimer = setInterval(() => {
+    const s = Math.floor((performance.now() - recStart) / 1000);
+    $('#recLabel').textContent = `停止して保存 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }, 250);
+};
+
+/* ---------------- Quality modes ---------------- */
+function applyRenderQuality() {
+  const q = opts.quality;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, q === 'high' ? 2 : q === 'light' ? 1 : 1.5));
+  const shadows = q !== 'light';
+  if (renderer.shadowMap.enabled !== shadows) {
+    renderer.shadowMap.enabled = shadows;
+    key.castShadow = shadows;
+    scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+  }
+  resize();
+}
+$('#optQuality').onchange = async () => {
+  applyRenderQuality();
+  if (engine && poseUrl() !== enginePoseUrl) {
+    note('体のAIモデルを切り替え中…');
+    try { await engine.parts.body.setUrl(poseUrl()); enginePoseUrl = poseUrl(); }
+    catch (e) { console.error(e); toast('モデルを切り替えられませんでした', 'インターネット接続を確認して、もう一度選び直してください。'); }
+    note('');
+  }
+  if (stream) startCamera(); // camera resolution depends on the mode
+};
+
+/* ---------------- Boot ---------------- */
+applyRenderQuality();
+setAvatar(buildMannequin());
+loadModel(MODELS[0]); // stays on the mannequin if offline
+tick();
+if (location.protocol === 'file:') {
+  // Chrome/Edge allow the camera on file://, Safari/Firefox may not
+  console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
+}
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen,
+  testOcclusion(lms, hands) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms); [latest.hands, latest.body] = keep; return r; } };
+</script>
+</body>
+</html>
