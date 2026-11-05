@@ -113,8 +113,10 @@ def build_packet(latest: Latest, w: int, h: int) -> dict:
         mouth = ((f[13].x + f[14].x) / 2, (f[13].y + f[14].y) / 2)
         eyes = [(f[159].x, f[159].y), (f[386].x, f[386].y)]
         inside = sum(1 for x, y in hand_pts if x0 - .04 * fw < x < x1 + .04 * fw and y0 - .04 * fh < y < y1 + .04 * fh)
-        near_mouth = any(math.hypot(x - mouth[0], y - mouth[1]) < .33 * fw for x, y in hand_pts)
-        near_eyes = any(math.hypot(x - ex, y - ey) < .22 * fw for x, y in hand_pts for ex, ey in eyes)
+        # measure in pixels (a = width / height) so the zones are round, not squashed by the image's aspect ratio
+        a = w / h
+        near_mouth = any(math.hypot((x - mouth[0]) * a, y - mouth[1]) < .33 * fw * a for x, y in hand_pts)
+        near_eyes = any(math.hypot((x - ex) * a, y - ey) < .22 * fw * a for x, y in hand_pts for ex, ey in eyes)
         pkt["occ"] = [int(inside >= 2), int(near_mouth), int(near_eyes)]
     return pkt
 

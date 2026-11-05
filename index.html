@@ -747,7 +747,8 @@ function handPointsNorm() {
   if (pl) for (const i of [15, 16, 17, 18, 19, 20, 21, 22]) if ((pl[i].visibility ?? 1) > 0.5) pts.push(pl[i]);
   return pts;
 }
-function faceOcclusion(lms) {
+// distances are measured in pixels (aspect = video width / height), so the zones are round on both landscape PCs and portrait phones
+function faceOcclusion(lms, aspect = 16 / 9) {
   let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
   for (let i = 0; i < lms.length; i += 6) { const p = lms[i]; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
   const w = x1 - x0, h = y1 - y0;
@@ -756,8 +757,8 @@ function faceOcclusion(lms) {
   let inFace = 0, mouthNear = false, eyesNear = false;
   for (const p of handPointsNorm()) {
     if (p.x > x0 - 0.04 * w && p.x < x1 + 0.04 * w && p.y > y0 - 0.04 * h && p.y < y1 + 0.04 * h) inFace++;
-    if (Math.hypot(p.x - mouth.x, p.y - mouth.y) < 0.33 * w) mouthNear = true;
-    for (const e of eyes) if (Math.hypot(p.x - e.x, p.y - e.y) < 0.22 * w) eyesNear = true;
+    if (Math.hypot((p.x - mouth.x) * aspect, p.y - mouth.y) < 0.33 * w * aspect) mouthNear = true;
+    for (const e of eyes) if (Math.hypot((p.x - e.x) * aspect, p.y - e.y) < 0.22 * w * aspect) eyesNear = true;
   }
   return { face: inFace >= 2, mouth: mouthNear, eyes: eyesNear };
 }
@@ -1270,7 +1271,7 @@ function onPart(p, res, t, vw, vh) {
     const ok = !!res?.faceLandmarks?.[0];
     let held = false;
     if (ok) {
-      const occ = faceOcclusion(res.faceLandmarks[0]);
+      const occ = faceOcclusion(res.faceLandmarks[0], vw / vh || 16 / 9);
       held = occ.face || occ.mouth || occ.eyes;
       if (occ.face) faceHeld = t;
       seen.face = t;
@@ -1438,7 +1439,7 @@ if (location.protocol === 'file:') {
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
 window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen,
-  testOcclusion(lms, hands) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms); [latest.hands, latest.body] = keep; return r; } };
+  testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
 </html>
