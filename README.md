@@ -3,7 +3,15 @@
 PC内蔵カメラ1台で、体・顔（表情）・指の動きを推定して3Dアバターを動かすWebページです。
 推定はすべてブラウザ内で行います（Google MediaPipe）。カメラ映像が外部に送られることはありません。
 
-## 開き方
+**すぐ使う**：https://yanasota-creator.github.io/mirror-mocap/ を Chrome / Edge / スマホのブラウザで開くだけです。
+
+| フォルダ・ファイル | 中身 |
+|---|---|
+| `index.html` | Web版（本体） |
+| `native/` | PC版の試作（Python トラッカー ＋ Unity）。使い方は `native/README.md` |
+| `HANDOFF.md` | 開発の引き継ぎ資料 |
+
+## 開き方（ファイルを手元で開く場合）
 
 ### いちばん簡単な方法
 1. `index.html` をダウンロードする

@@ -1,0 +1,3 @@
+native/tracker/models/
+__pycache__/
+*.part
