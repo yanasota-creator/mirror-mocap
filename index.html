@@ -1130,7 +1130,7 @@ function renderPicker() {
   }
 }
 async function loadModel(m) {
-  if (await tryLoadVRM(m.url, m.name, m.credit)) { currentModelId = m.id; $('#curThumb').style.backgroundImage = `url("${m.thumb}")`; }
+  if (await tryLoadVRM(m.url, m.name, m.credit)) { currentModelId = m.id; $('#curThumb').style.backgroundImage = `url("${m.thumb}")`; saveSettings(); }
 }
 $('#pickBtn').onclick = () => { renderPicker(); dlg.showModal(); };
 $('#brClose').onclick = () => dlg.close();
@@ -1221,17 +1221,26 @@ $('#optJiggle').oninput = () => { $('#jiggleOut').textContent = $('#optJiggle').
 const partStat = { body: {}, face: {}, hands: {} }; // ms (EMA), gap between results (EMA), count, delegate
 const latest = { body: null, face: null, hands: null };
 let frameNo = 0;
+let vframe = 0, lastPumpVT = -1;
 function pump() {
   if (!running || !engine || !avatar || video.readyState < 2) return;
   const vt = video.currentTime;
+  if (vt !== lastPumpVT) { lastPumpVT = vt; vframe++; }
   const vw = video.videoWidth, vh = video.videoHeight;
   for (const p of PARTS) {
     const P = engine.parts[p];
     if (!opts[p]) { latest[p] = null; continue; }
     if (P.busy || P.lastVT === vt) continue;
+    // light mode: body and hands take turns (face runs every frame for expressions)
+    if (opts.quality === 'light' && ((p === 'body' && vframe % 2) || (p === 'hands' && !(vframe % 2)))) continue;
+    if (p === 'hands') {
+      // the hand AI is the heaviest: skip it while the body AI sees no wrist in the frame, peeking every 8th frame
+      const pl = latest.body?.landmarks?.[0];
+      const wristsOut = opts.body && pl && [15, 16].every(i => (pl[i].visibility ?? 0) < 0.3 || pl[i].y > 1.02);
+      P.peek = (P.peek ?? 0) + 1;
+      if (wristsOut && P.peek % 8) { latest.hands = null; chips.left.classList.remove('on'); chips.right.classList.remove('on'); continue; }
+    }
     P.lastVT = vt;
-    // light mode: hands on every other camera frame
-    if (p === 'hands' && opts.quality === 'light' && (P.skip = !P.skip)) continue;
     let ts = performance.now(); if (ts <= (P.lastTs ?? 0)) ts = P.lastTs + 1; P.lastTs = ts;
     P.busy = true;
     P.detect(video, ts)
@@ -1327,6 +1336,10 @@ function tick() {
       const deciding = PARTS.some(p => partStat[p].deciding);
       $('#perfDetail').textContent = '1回の推定: ' + PARTS.map(f).filter(Boolean).join(' / ') + (deciding ? '（GPUとCPUの速さを比較中…）' : '');
     }
+    // drawing too slow while tracking: lower the 3D resolution step by step (reset when the mode changes)
+    if (running && frameCount * 1000 / ms < 35 && renderer.getPixelRatio() > 0.75) {
+      renderer.setPixelRatio(Math.max(0.75, renderer.getPixelRatio() - 0.25)); resize();
+    }
     frameCount = 0; statT = performance.now();
   }
 }
@@ -1385,10 +1398,40 @@ $('#optQuality').onchange = async () => {
   if (stream) startCamera(); // camera resolution depends on the mode
 };
 
+/* ---------------- Remembered settings (this browser only) ---------------- */
+const SETTINGS_KEY = 'mirror-mocap-settings';
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle'];
+function loadSettings() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
+  if (!saved) {
+    if (matchMedia('(pointer: coarse)').matches) $('#optQuality').value = 'light'; // phones and tablets start light
+    return null;
+  }
+  for (const id of SAVED_IDS) {
+    const el = document.getElementById(id);
+    if (!(id in saved)) continue;
+    if (el.type === 'checkbox') el.checked = !!saved[id]; else el.value = saved[id];
+  }
+  $('#smoothOut').textContent = $('#optSmooth').value;
+  $('#jiggleOut').textContent = $('#optJiggle').value;
+  $('#pip').classList.toggle('mirror', opts.mirror);
+  return saved.model ?? null;
+}
+function saveSettings() {
+  try {
+    const s = { model: currentModelId };
+    for (const id of SAVED_IDS) { const el = document.getElementById(id); s[id] = el.type === 'checkbox' ? el.checked : el.value; }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {}
+}
+document.querySelector('.panel').addEventListener('change', saveSettings);
+
 /* ---------------- Boot ---------------- */
+const savedModel = loadSettings();
 applyRenderQuality();
 setAvatar(buildMannequin());
-loadModel(MODELS[0]); // stays on the mannequin if offline
+loadModel(MODELS.find(m => m.id === savedModel) ?? MODELS[0]); // stays on the mannequin if offline
 tick();
 if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
