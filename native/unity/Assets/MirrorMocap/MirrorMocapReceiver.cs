@@ -9,6 +9,9 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 using UniVRM10;
 
 [Serializable]
@@ -34,6 +37,7 @@ public class MirrorMocapReceiver : MonoBehaviour
     [Tooltip("膝と足首が映っているときだけ脚を動かす")] public bool trackLegs = true;
     [Range(0, 1), Tooltip("上げるとブレが減り、少し遅れる")] public float smoothing = 0.45f;
     [Range(0, 1), Tooltip("上げると動きが行き過ぎて戻る（ぷるぷる）")] public float jiggle = 0.55f;
+    [Tooltip("目の向き（視線）を動かす")] public bool trackGaze = true;
 
     [Header("Scene")]
     [Tooltip("再生開始時にメインカメラをアバターの正面に置く")] public bool placeCamera = true;
@@ -56,6 +60,7 @@ public class MirrorMocapReceiver : MonoBehaviour
     bool haveTorso, haveHead;
     float seenPose = -99, seenFace = -99, faceHeld = -99, seenHandL = -99, seenHandR = -99;
     readonly float[] expr = new float[6]; // blinkL, blinkR, aa, ou, oh, happy (avatar sides)
+    float gazeYaw, gazePitch; // degrees, UniVRM convention: +yaw = avatar's right, +pitch = up
 
     UdpClient udp;
     Thread thread;
@@ -82,11 +87,28 @@ public class MirrorMocapReceiver : MonoBehaviour
         anim = GetComponentInChildren<Animator>();
         vrm = GetComponentInChildren<Vrm10Instance>();
         if (anim == null || !anim.isHuman) { Debug.LogError("[MirrorMocap] 人型(Humanoid)の Animator が見つかりません。VRMモデルのルートに付けてください。"); enabled = false; return; }
+        if (anim.runtimeAnimatorController != null)
+            Debug.LogWarning("[MirrorMocap] Animator に Controller が設定されています。アニメーションが姿勢を上書きするので、Animator の Controller 欄を空（None）にしてください。");
+
+        // Models loaded at runtime with a Control Rig must be posed through the rig: UniVRM copies it onto the real bones every frame.
+        // (Models imported in the Unity editor have no Control Rig, so the Animator's bones are used.)
+        Func<HumanBodyBones, Transform> boneOf = anim.GetBoneTransform;
+        if (vrm != null)
+        {
+            try
+            {
+                var rig = vrm.Runtime.ControlRig;
+                if (rig != null) { boneOf = rig.GetBoneTransform; Debug.Log("[MirrorMocap] Control Rig を通して動かします。"); }
+                vrm.LookAtTargetType = VRM10ObjectLookAt.LookAtTargetTypes.YawPitchValue; // eyes follow our yaw/pitch
+            }
+            catch (Exception e) { Debug.LogWarning("[MirrorMocap] VRMの初期化を確認できませんでした（表情・視線が動かない可能性があります）: " + e.Message); }
+        }
+        else Debug.LogWarning("[MirrorMocap] Vrm10Instance が見つかりません。体は動きますが、表情と視線は動きません（VRM 1.0 として取り込まれているか確認してください）。");
 
         foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones)))
         {
             if (b == HumanBodyBones.LastBone) continue;
-            var t = anim.GetBoneTransform(b);
+            var t = boneOf(b);
             if (t != null) bones[b] = new Bone { t = t, rest = t.rotation, cur = t.rotation, target = t.rotation, restPos = t.position };
         }
         R0 = Basis(P(HumanBodyBones.RightUpperArm) - P(HumanBodyBones.LeftUpperArm), Vector3.up);
@@ -118,14 +140,31 @@ public class MirrorMocapReceiver : MonoBehaviour
             Camera.main.transform.LookAt(look);
         }
 
-        udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, port));
+        started = true;
+        Listen();
+    }
+
+    bool started;
+    void OnEnable() { if (started) Listen(); } // re-enabled after being switched off in the Inspector
+
+    void Listen()
+    {
+        if (udp != null) return;
+        UdpClient client;
+        try { client = new UdpClient(new IPEndPoint(IPAddress.Loopback, port)); }
+        catch (SocketException e)
+        {
+            Debug.LogError($"[MirrorMocap] UDP {port} を開けません（ほかのアプリか、もう1つの MirrorMocapReceiver が使用中）。port を変えて、tracker.py も --port で同じ番号にしてください。詳細: {e.Message}");
+            return;
+        }
+        udp = client;
         listening = true;
         thread = new Thread(() =>
         {
             var ep = new IPEndPoint(IPAddress.Any, 0);
             while (listening)
             {
-                try { latestJson = Encoding.UTF8.GetString(udp.Receive(ref ep)); }
+                try { latestJson = Encoding.UTF8.GetString(client.Receive(ref ep)); }
                 catch (SocketException) { if (!listening) break; }
                 catch (ObjectDisposedException) { break; }
             }
@@ -171,7 +210,11 @@ public class MirrorMocapReceiver : MonoBehaviour
 
     void Update()
     {
-#if ENABLE_LEGACY_INPUT_MANAGER
+#if ENABLE_INPUT_SYSTEM
+        var kb = Keyboard.current; // Unity 6's new input system
+        if (kb != null && kb.cKey.wasPressedThisFrame) Calibrate();
+        if (kb != null && kb.mKey.wasPressedThisFrame) ToggleMirror();
+#elif ENABLE_LEGACY_INPUT_MANAGER
         if (Input.GetKeyDown(KeyCode.C)) Calibrate();
         if (Input.GetKeyDown(KeyCode.M)) ToggleMirror();
 #endif
@@ -199,6 +242,7 @@ public class MirrorMocapReceiver : MonoBehaviour
             e.SetWeight(ExpressionKey.Ou, expr[3]);
             e.SetWeight(ExpressionKey.Oh, expr[4]);
             e.SetWeight(ExpressionKey.Happy, expr[5]);
+            vrm.Runtime.LookAt.SetYawPitchManually(trackGaze ? gazeYaw : 0f, trackGaze ? gazePitch : 0f);
         }
     }
 
@@ -256,7 +300,7 @@ public class MirrorMocapReceiver : MonoBehaviour
             var torsoRest = calibTorso.HasValue ? R0 * calibTorso.Value : restChest;
             bool hasChest = bones.ContainsKey(HumanBodyBones.Chest);
             if (hasChest && bones.ContainsKey(HumanBodyBones.Spine))
-                SetTarget(HumanBodyBones.Spine, Quaternion.Slerp(FromBasis(HumanBodyBones.Spine, hipsT, restHips), FromBasis(HumanBodyBones.Spine, torsoT, torsoRest), 0.5f));
+                SetTarget(HumanBodyBones.Spine, Quaternion.Slerp(FromBasis(HumanBodyBones.Spine, hipsT, calibHips.HasValue ? R0 * calibHips.Value : restHips), FromBasis(HumanBodyBones.Spine, torsoT, torsoRest), 0.5f));
             SetTarget(hasChest ? HumanBodyBones.Chest : HumanBodyBones.Spine, FromBasis(hasChest ? HumanBodyBones.Chest : HumanBodyBones.Spine, torsoT, torsoRest));
 
             foreach (bool left in new[] { true, false })
@@ -346,6 +390,14 @@ public class MirrorMocapReceiver : MonoBehaviour
                     if (!hold) expr[i] += (t[i] - expr[i]) * 0.55f;
                 }
             }
+            // gaze (same gains as the web version); keep the last direction while a hand covers the eyes
+            if (p.bs != null && p.bs.Length >= 8 && !occEyes && !occFace)
+            {
+                float yaw = (mirror ? 1f : -1f) * p.bs[6] * 25f; // bs[6] = subject looks to their own left
+                float pitch = p.bs[7] * 15f;
+                gazeYaw += (yaw - gazeYaw) * 0.55f;
+                gazePitch += (pitch - gazePitch) * 0.55f;
+            }
         }
     }
     int jumpRejects;
@@ -365,6 +417,7 @@ public class MirrorMocapReceiver : MonoBehaviour
         {
             Relax(HumanBodyBones.Neck); Relax(HumanBodyBones.Head);
             for (int i = 0; i < expr.Length; i++) expr[i] *= 0.9f;
+            gazeYaw *= 0.9f; gazePitch *= 0.9f;
         }
     }
 
