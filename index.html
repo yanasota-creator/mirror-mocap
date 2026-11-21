@@ -69,6 +69,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, label.file:focu
 .pip video, .pip canvas { display: block; width: 100%; height: auto; }
 .pip canvas { position: absolute; inset: 0; height: 100%; }
 .pip figcaption { position: absolute; top: 6px; left: 8px; font-size: 11px; color: #fff; background: rgba(0,0,0,.5); padding: 0 6px; border-radius: 4px; }
+/* camera image hidden: keep the video playing (the AI reads it) but show only a small label */
+.pip.off { width: auto; cursor: default; }
+.pip.off .inner { visibility: hidden; position: absolute; width: 2px; height: 2px; overflow: hidden; }
+.pip.off figcaption { position: static; display: block; margin: 6px 8px; background: none; }
 
 .views { position: absolute; right: 16px; bottom: 16px; display: flex; gap: 4px; background: rgba(18,20,27,.7); border: 1px solid var(--line); border-radius: 8px; padding: 3px; backdrop-filter: blur(6px); }
 .views button { border: 0; background: transparent; padding: 4px 10px; border-radius: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
@@ -133,6 +137,9 @@ label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; wi
 .toggle input:checked { background: var(--accent); }
 .toggle input:checked::after { transform: translateX(14px); background: var(--accent-ink); }
 .toggle small { color: var(--muted); display: block; font-size: 11px; line-height: 1.4; }
+.toggle input:disabled { opacity: .4; cursor: not-allowed; }
+.toggle:has(input:disabled) { cursor: not-allowed; }
+.privacy { display: grid; gap: 10px; margin-top: 12px; }
 
 .slider { display: grid; gap: 4px; }
 .slider .top { display: flex; justify-content: space-between; }
@@ -214,6 +221,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
           <label class="btn file">動画ファイル<input type="file" id="videoFile" accept="video/*"></label>
         </div>
         <select id="camSelect" aria-label="使用するカメラ"><option value="">既定のカメラ</option></select>
+        <div class="privacy">
+          <label class="toggle"><span>カメラ映像を表示<small>オフにすると、画面に自分の顔が映りません（推定は続きます）</small></span><input type="checkbox" id="optPreview" checked></label>
+          <label class="toggle"><span>表示をロック<small>ロック中は表示をオンにできません。配信・画面共有中の顔バレ防止に</small></span><input type="checkbox" id="optPreviewLock"></label>
+        </div>
       </section>
 
       <section class="sec">
@@ -1074,12 +1085,32 @@ async function startVideoFile(file) {
   try { await video.play(); onSourceStarted('動画: ' + file.name); }
   catch (e) { toast('動画を再生できませんでした', 'このブラウザが対応していない形式の可能性があります。mp4 (H.264) か webm を試してください。'); }
 }
+/* camera preview on/off + lock (so a stray click can't show your face on a stream) */
+let sourceLabel = 'カメラ';
+function applyPreview() {
+  const lock = $('#optPreviewLock').checked;
+  if (lock) $('#optPreview').checked = false;
+  $('#optPreview').disabled = lock;
+  const show = $('#optPreview').checked, pip = $('#pip');
+  pip.classList.toggle('off', !show);
+  if (!show) pip.classList.remove('mini');
+  pip.title = show ? 'タップで小さく／元に戻す' : '';
+  $('#pipLabel').textContent = show ? sourceLabel : lock ? '🔒 カメラ映像は非表示（ロック中）' : 'カメラ映像は非表示';
+}
+$('#optPreview').onchange = applyPreview;
+$('#optPreviewLock').onchange = () => {
+  const box = $('#optPreviewLock');
+  // unlocking needs a confirmation; the preview itself stays off until switched on separately
+  if (!box.checked && !confirm('表示のロックを外しますか？\n外したあと「カメラ映像を表示」をオンにすると、画面に自分の顔が映ります。')) box.checked = true;
+  applyPreview();
+};
 function onSourceStarted(label) {
   running = true;
   resetFilters();
   $('#intro').hidden = true;
+  sourceLabel = label;
+  applyPreview();
   $('#pip').hidden = false;
-  $('#pipLabel').textContent = label;
   $('#camBtn').textContent = 'カメラ再起動';
 }
 async function listCameras() {
@@ -1090,7 +1121,7 @@ async function listCameras() {
     sel.value = cur;
   } catch {}
 }
-$('#pip').onclick = () => $('#pip').classList.toggle('mini');
+$('#pip').onclick = () => { if (!$('#pip').classList.contains('off')) $('#pip').classList.toggle('mini'); };
 $('#startBtn').onclick = startCamera;
 $('#camBtn').onclick = startCamera;
 $('#camSelect').onchange = () => { if (stream) startCamera(); };
@@ -1401,7 +1432,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1417,6 +1448,7 @@ function loadSettings() {
   $('#smoothOut').textContent = $('#optSmooth').value;
   $('#jiggleOut').textContent = $('#optJiggle').value;
   $('#pip').classList.toggle('mirror', opts.mirror);
+  applyPreview();
   return saved.model ?? null;
 }
 function saveSettings() {
