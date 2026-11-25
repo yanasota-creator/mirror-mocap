@@ -162,6 +162,12 @@ body.stream .main { grid-template-columns: 1fr; }
 .sec.closed h2::after { transform: rotate(-45deg); }
 .sec.closed > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
+.countdown { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 400 120px var(--font-display); color: #fff; text-shadow: 0 4px 24px rgba(0,0,0,.6); z-index: 4; }
+details.keys summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+details.keys table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 6px; }
+details.keys td { padding: 3px 0; vertical-align: top; color: var(--muted); }
+details.keys td:first-child { white-space: nowrap; padding-right: 10px; color: var(--fg); }
+kbd { font: 11px var(--font-mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: #14161d; }
 .stream-exit { position: absolute; top: 12px; right: 12px; z-index: 5; opacity: 0; transition: opacity .3s; }
 .stream-exit.show { opacity: 1; }
 
@@ -236,6 +242,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         </div>
       </div>
 
+      <div class="countdown" id="countdown" hidden aria-live="assertive"></div>
       <button type="button" class="btn stream-exit" id="streamExit" hidden>配信モードを終わる（Esc）</button>
       <div class="toast" id="toast" role="alert" hidden><b id="toastTitle"></b><span id="toastBody"></span><button type="button" id="toastClose">閉じる</button></div>
     </main>
@@ -300,8 +307,20 @@ body.stream .stage { height: 100%; min-height: 0; }
 
       <section class="sec">
         <h2>調整</h2>
-        <button type="button" class="btn" id="calibBtn">正面リセット</button>
+        <button type="button" class="btn" id="calibBtn">正面リセット<kbd>C</kbd></button>
+        <label class="toggle"><span>3秒数えてから記憶する<small>押したあと、まっすぐ座り直す時間を取ります</small></span><input type="checkbox" id="optCalibDelay" checked></label>
         <p class="hint">カメラに向かってまっすぐ座った状態で押すと、その姿勢を「正面」として記憶します。首や体が傾いて見えるときに使います。</p>
+        <details class="keys"><summary>キーボード操作</summary>
+          <table>
+            <tr><td><kbd>1</kbd>〜<kbd>5</kbd></td><td>表情（喜・怒・哀・驚・穏）／ <kbd>0</kbd> で解除</td></tr>
+            <tr><td><kbd>C</kbd></td><td>正面リセット</td></tr>
+            <tr><td><kbd>F</kbd></td><td>配信モードの切り替え（<kbd>Esc</kbd> でも戻る）</td></tr>
+            <tr><td><kbd>P</kbd></td><td>スクリーンショット</td></tr>
+            <tr><td>右ドラッグ</td><td>カメラを平行移動（アバターを画面の端に寄せる）</td></tr>
+            <tr><td>ホイール</td><td>ズーム</td></tr>
+          </table>
+        </details>
+        <button type="button" class="btn" id="resetSettings">設定を初期化</button>
       </section>
 
       <section class="sec">
@@ -1601,7 +1620,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1722,6 +1741,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === '0') setPreset(null);
   else if (e.key === 'f' || e.key === 'F') setStreamMode(!document.body.classList.contains('stream'));
   else if (e.key === 'p' || e.key === 'P') $('#shotBtn').click();
+  else if (e.key === 'c' || e.key === 'C') $('#calibBtn').click();
 });
 
 /* ---- microphone lip sync (local only: the sound is analysed and discarded) ---- */
@@ -2281,7 +2301,23 @@ function stepBodyPos(dt, now) {
   hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y, bodyPos.rest.z);
 }
 const calibOrig = $('#calibBtn').onclick;
-$('#calibBtn').onclick = () => { calibOrig(); bodyPos.ref = null; };
+let countTimer = null;
+function calibrateNow() { calibOrig(); bodyPos.ref = null; }
+$('#calibBtn').onclick = () => {
+  if (!$('#optCalibDelay').checked) { calibrateNow(); return; }
+  clearInterval(countTimer);
+  let n = 3; const el = $('#countdown'); el.hidden = false; el.textContent = n;
+  countTimer = setInterval(() => {
+    n--;
+    if (n > 0) { el.textContent = n; return; }
+    clearInterval(countTimer); el.hidden = true; calibrateNow();
+  }, 1000);
+};
+$('#resetSettings').onclick = () => {
+  if (!confirm('設定を初期状態に戻して、ページを開き直しますか？\n（このブラウザに保存した自分のVRMは消えません）')) return;
+  try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem(CLOSED_KEY); } catch {}
+  location.reload();
+};
 $('#optMove').onchange = () => { bodyPos.ref = null; };
 
 /* ---- your own VRM files, kept in this browser (IndexedDB) ---- */
