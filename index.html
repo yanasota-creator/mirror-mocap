@@ -305,10 +305,16 @@ body.stream .stage { height: 100%; min-height: 0; }
         <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
         <p class="hint">停止すると .webm ファイルとして保存されます。「マイクで口パク」がオンなら声も入ります。</p>
         <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）</button>
-        <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録（BVH）</span></button>
-        <label class="btn file" id="bvhPlayLabel">モーションを再生（BVH）<input type="file" id="bvhFile" accept=".bvh"></label>
+        <div class="grid2">
+          <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
+          <select id="motionFormat" aria-label="モーションの保存形式">
+            <option value="vrma" selected>VRMA（表情も）</option>
+            <option value="bvh">BVH</option>
+          </select>
+        </div>
+        <label class="btn file" id="bvhPlayLabel">モーションを再生（VRMA / BVH）<input type="file" id="bvhFile" accept=".vrma,.bvh"></label>
         <button type="button" class="btn" id="bvhStop" hidden>再生を止める</button>
-        <p class="hint">BVH は動きだけのデータです。Blender・MMD（変換ツール経由）・Unity などに読み込めます。</p>
+        <p class="hint">VRMA は VRM 公式のモーション形式で、表情も入ります（VRoid Hub・cluster・three-vrm など）。BVH は体の動きだけで、Blender などに読み込めます。配布されている VRMA（ダンスなど）も再生できます。</p>
       </section>
 
       <section class="sec">
@@ -419,7 +425,8 @@ body.stream .stage { height: 100%; min-height: 0; }
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js"
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js",
+    "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js"
   }
 }
 </script>
@@ -1561,7 +1568,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -2067,6 +2074,7 @@ function parseBVH(text) {
 }
 $('#bvhFile').onchange = async (e) => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (/\.vrma$/i.test(f.name)) { playVRMA(f); return; }
   try {
     const clip = parseBVH(await f.text());
     const known = clip.joints.filter(j => HUMAN_BONES.includes(j.name)).length;
@@ -2075,7 +2083,27 @@ $('#bvhFile').onchange = async (e) => {
     $('#bvhStop').hidden = false;
   } catch { toast('BVHを読み込めませんでした', 'ファイルが壊れているか、BVH形式ではありません。'); }
 };
+async function playVRMA(file) {
+  if (!avatar?.vrm) { toast('VRMAはVRMモデルで再生できます', 'マネキン以外のモデルを選んでください。', 'info'); return; }
+  try {
+    const { VRMAnimationLoaderPlugin, createVRMAnimationClip } = await import('@pixiv/three-vrm-animation');
+    const loader = new GLTFLoader(); loader.register(p => new VRMAnimationLoaderPlugin(p));
+    const url = URL.createObjectURL(file);
+    const gltf = await loader.loadAsync(url); URL.revokeObjectURL(url);
+    const anim = gltf.userData.vrmAnimations?.[0]; if (!anim) throw new Error('no-anim');
+    if (play.clip) stopPlayback();
+    play.hipsRest = avatar.bone('hips')?.position.clone() ?? null;
+    // evaluate every track ourselves each frame instead of using AnimationMixer: the mixer only writes values that
+    // changed since its last write, so a held pose or a constant expression would be overwritten by tracking
+    const clip = createVRMAnimationClip(anim, avatar.vrm);
+    play.tracks = clip.tracks.map(tr => ({ interp: tr.createInterpolant(), bind: new THREE.PropertyBinding(avatar.vrm.scene, tr.name) }));
+    play.dur = Math.max(clip.duration, 1e-3); play.t = 0;
+    play.clip = { vrma: true, name: file.name };
+    $('#bvhStop').hidden = false;
+  } catch (err) { console.error(err); toast('VRMAを読み込めませんでした', 'ファイルが壊れているか、VRMA形式ではありません。'); }
+}
 function stopPlayback() {
+  play.tracks = null;
   play.clip = null; $('#bvhStop').hidden = true;
   if (play.hipsRest) avatar.bone('hips')?.position.copy(play.hipsRest);
 }
@@ -2083,6 +2111,11 @@ $('#bvhStop').onclick = stopPlayback;
 const _pe = new THREE.Euler(), _pq = new Q();
 function applyPlayback(dt) {
   const c = play.clip; if (!c || !avatar) return;
+  if (play.tracks) {
+    play.t = (play.t + dt) % play.dur;
+    for (const x of play.tracks) x.bind.setValue(x.interp.evaluate(play.t), 0);
+    return;
+  }
   play.t = (play.t + dt) % (c.nFrames * c.dt);
   const row = Math.min(c.nFrames - 1, Math.floor(play.t / c.dt)) * c.width, flip = isVRM0(), D = Math.PI / 180;
   let k = row;
@@ -2174,6 +2207,62 @@ $('#chatSend').onclick = () => {
 };
 $('#chatText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) $('#chatSend').click(); });
 
+
+/* ---- VRMA (VRM Animation, glTF binary) export ----
+   Nodes are the humanoid bones in their rest pose (no rotation, positions from the model), so the recorded
+   local rotations are the animation as is. Expressions are extra nodes whose translation.x is the weight. */
+const VRMA_EXPR = ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'aa', 'ih', 'ou', 'ee', 'oh', 'blinkLeft', 'blinkRight'];
+function vrmaBinary(frames, rest, dt) {
+  const { names, parent } = rest.h, idx = new Map(names.map((n, i) => [n, i]));
+  const nodes = names.map(n => ({ name: n, translation: rest.pos[n] ?? [0, 0, 0] }));
+  for (const n of names) if (parent[n]) (nodes[idx.get(parent[n])].children ??= []).push(idx.get(n));
+  const root = names.filter(n => !parent[n]).map(n => idx.get(n));
+  const exprNodes = {};
+  for (const k of VRMA_EXPR) { exprNodes[k] = { node: nodes.length }; nodes.push({ name: 'Expression_' + k, translation: [0, 0, 0] }); }
+  const chunks = [], bufferViews = [], accessors = [];
+  let offset = 0;
+  const addAccessor = (arr, type, minmax) => {
+    const bytes = new Uint8Array(arr.buffer); chunks.push(bytes);
+    bufferViews.push({ buffer: 0, byteOffset: offset, byteLength: bytes.byteLength }); offset += bytes.byteLength;
+    const a = { bufferView: bufferViews.length - 1, componentType: 5126, count: arr.length / { SCALAR: 1, VEC3: 3, VEC4: 4 }[type], type };
+    if (minmax) Object.assign(a, minmax);
+    accessors.push(a); return accessors.length - 1;
+  };
+  const N = frames.length, times = new Float32Array(N).map((_, i) => i * dt);
+  const input = addAccessor(times, 'SCALAR', { min: [0], max: [times[N - 1]] });
+  const samplers = [], channels = [];
+  const track = (node, path, arr, type) => { samplers.push({ input, output: addAccessor(arr, type), interpolation: 'LINEAR' }); channels.push({ sampler: samplers.length - 1, target: { node, path } }); };
+  for (const n of names) {
+    const q = new Float32Array(N * 4); frames.forEach((f, i) => q.set(f.bones[n] ?? [0, 0, 0, 1], i * 4));
+    track(idx.get(n), 'rotation', q, 'VEC4');
+  }
+  const hp = new Float32Array(N * 3); frames.forEach((f, i) => hp.set(f.pos.hips ?? rest.pos.hips, i * 3));
+  track(idx.get('hips'), 'translation', hp, 'VEC3');
+  for (const k of VRMA_EXPR) {
+    const v = new Float32Array(N * 3); frames.forEach((f, i) => { v[i * 3] = Math.min(1, Math.max(0, f.expr?.[k] ?? 0)); });
+    track(exprNodes[k].node, 'translation', v, 'VEC3');
+  }
+  const humanBones = Object.fromEntries(names.map(n => [n, { node: idx.get(n) }]));
+  const json = {
+    asset: { version: '2.0', generator: 'Mirror Mocap' },
+    extensionsUsed: ['VRMC_vrm_animation'],
+    extensions: { VRMC_vrm_animation: { specVersion: '1.0', humanoid: { humanBones }, expressions: { preset: exprNodes } } },
+    scene: 0, scenes: [{ nodes: [...root, ...VRMA_EXPR.map(k => exprNodes[k].node)] }],
+    nodes, animations: [{ name: 'mocap', samplers, channels }],
+    buffers: [{ byteLength: offset }], bufferViews, accessors,
+  };
+  // GLB container: 12-byte header, JSON chunk (space padded), BIN chunk (zero padded)
+  const pad4 = (n) => (n + 3) & ~3;
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(json)), jsonLen = pad4(jsonBytes.length), binLen = pad4(offset);
+  const out = new Uint8Array(12 + 8 + jsonLen + 8 + binLen), dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
+  dv.setUint32(12, jsonLen, true); dv.setUint32(16, 0x4E4F534A, true);
+  out.set(jsonBytes, 20); out.fill(0x20, 20 + jsonBytes.length, 20 + jsonLen);
+  dv.setUint32(20 + jsonLen, binLen, true); dv.setUint32(24 + jsonLen, 0x004E4942, true);
+  let o = 28 + jsonLen; for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out;
+}
+
 /* ---- BVH motion recording ---- */
 const bvh = { frames: null, last: 0, start: 0, timer: null, rest: null };
 function bvhHierarchy() {
@@ -2217,10 +2306,12 @@ $('#bvhBtn').onclick = () => {
   if (bvh.frames) {
     clearInterval(bvh.timer);
     const frames = bvh.frames; bvh.frames = null;
-    $('#bvhBtn').setAttribute('aria-pressed', 'false'); $('#bvhLabel').textContent = 'モーションを記録（BVH）';
+    $('#bvhBtn').setAttribute('aria-pressed', 'false'); $('#bvhLabel').textContent = 'モーションを記録';
     if (frames.length < 2) { toast('記録が短すぎます', '1秒以上記録してください。', 'info'); return; }
-    const url = URL.createObjectURL(new Blob([bvhText(frames, bvh.rest, 1 / 30)], { type: 'text/plain' }));
-    download(url, `mocap-${stamp()}.bvh`);
+    const vrma = $('#motionFormat').value === 'vrma';
+    const url = URL.createObjectURL(vrma ? new Blob([vrmaBinary(frames, bvh.rest, 1 / 30)], { type: 'model/gltf-binary' })
+                                         : new Blob([bvhText(frames, bvh.rest, 1 / 30)], { type: 'text/plain' }));
+    download(url, `mocap-${stamp()}.${vrma ? 'vrma' : 'bvh'}`);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     return;
   }
@@ -2237,10 +2328,10 @@ $('#bvhBtn').onclick = () => {
 function bvhCapture(now) {
   if (!bvh.frames) return;
   // fixed 30 fps timeline: a slow render frame fills the missing samples with the current pose, so playback keeps real time
-  if (!bvh.last) { bvh.last = now; bvh.frames.push(exportPose()); return; }
+  if (!bvh.last) { bvh.last = now; bvh.frames.push({ ...exportPose(), expr: { ...extraExpr } }); return; }
   if (now - bvh.last > 1) bvh.last = now - 1 / 30; // after a long stall (e.g. a hidden tab) don't write a burst of frames
   if (now - bvh.last < 1 / 30) return;
-  const pose = exportPose();
+  const pose = exportPose(); pose.expr = { ...extraExpr };
   while (now - bvh.last >= 1 / 30) { bvh.frames.push(pose); bvh.last += 1 / 30; }
   if (bvh.frames.length > 30 * 60 * 10) $('#bvhBtn').click(); // stop at 10 minutes
 }
@@ -2263,7 +2354,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText, parseBVH, play, grip,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
