@@ -308,7 +308,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <h2>録画</h2>
         <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
         <p class="hint">停止すると .webm ファイルとして保存されます。「マイクで口パク」がオンなら声も入ります。</p>
-        <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）</button>
+        <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
         <div class="grid2">
           <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
           <select id="motionFormat" aria-label="モーションの保存形式">
@@ -361,8 +361,9 @@ body.stream .stage { height: 100%; min-height: 0; }
           <option value="night">夜</option>
         </select>
         <label class="toggle"><span>カメラをゆっくり動かす<small>配信画面に少し動きを付けます</small></span><input type="checkbox" id="optSway"></label>
-        <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）</button>
-        <p class="hint">OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
+        <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）<kbd>F</kbd></button>
+        <button type="button" class="btn" id="pipBtn">デスクトップに浮かべる（小窓）</button>
+        <p class="hint">「デスクトップに浮かべる」は、ほかのアプリの上に常に表示される小窓にアバターを出します（Chrome / Edge）。OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
       </section>
 
       <section class="sec">
@@ -375,6 +376,10 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
         </div>
         <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <div id="customExprWrap" hidden>
+          <label>このモデル独自の表情</label>
+          <div class="grid3" id="customExpr"></div>
+        </div>
         <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
         <label class="toggle"><span>エフェクト<small>笑顔でハート、驚きで「！」、怒りで怒りマーク、悲しみで涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
         <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
@@ -559,7 +564,9 @@ const grid = new THREE.GridHelper(8, 32, 0x2a2e3b, 0x20232d);
 grid.position.y = 0.001;
 scene.add(grid);
 
+let pipWin = null; // floating Picture-in-Picture window ("デスクトップに浮かべる"), declared before resize() first runs
 function resize() {
+  if (pipWin) return; // the canvas lives in the floating window
   const w = stage.clientWidth, h = stage.clientHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / Math.max(1, h);
@@ -759,6 +766,7 @@ function setAvatar(a) {
   $('#avatarCredit').textContent = a.credit ?? '';
   setView(currentView, true);
   scheduleAccessories();
+  renderCustomExpr();
 }
 
 /* ---------------- Solver primitives ---------------- */
@@ -1692,7 +1700,19 @@ const presetW = Object.fromEntries(PRESETS.map(k => [k, 0]));
 let activePreset = null;
 function setPreset(k) {
   activePreset = k === activePreset ? null : k;
-  document.querySelectorAll('#exprBtns button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.expr === activePreset)));
+  document.querySelectorAll('#exprBtns button, #customExpr button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.expr === activePreset)));
+}
+// expressions the model's author added (e.g. ">_<"), as extra buttons
+function renderCustomExpr() {
+  const box = $('#customExpr'); box.textContent = '';
+  const names = Object.keys(avatar?.vrm?.expressionManager?.customExpressionMap ?? {});
+  $('#customExprWrap').hidden = !names.length;
+  for (const n of names.slice(0, 24)) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.dataset.expr = n; b.textContent = n; b.title = n;
+    b.setAttribute('aria-pressed', 'false'); b.onclick = () => setPreset(n); box.append(b);
+  }
+  if (activePreset && !PRESETS.includes(activePreset)) setPreset(null);
+  for (const k in presetW) if (!PRESETS.includes(k)) delete presetW[k];
 }
 document.querySelectorAll('#exprBtns button').forEach(b => b.onclick = () => setPreset(b.dataset.expr));
 addEventListener('keydown', (e) => {
@@ -1700,6 +1720,8 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.body.classList.contains('stream')) { setStreamMode(false); return; }
   if (e.key >= '1' && e.key <= '5') setPreset(PRESETS[+e.key - 1]);
   else if (e.key === '0') setPreset(null);
+  else if (e.key === 'f' || e.key === 'F') setStreamMode(!document.body.classList.contains('stream'));
+  else if (e.key === 'p' || e.key === 'P') $('#shotBtn').click();
 });
 
 /* ---- microphone lip sync (local only: the sound is analysed and discarded) ---- */
@@ -1739,7 +1761,8 @@ let extraExpr = {}, gestureW = 0;
 const autoBlink = { at: -1, next: 0 };
 function extrasBeforeUpdate(dt, now) {
   const a = 1 - Math.exp(-dt * 10);
-  for (const k of PRESETS) presetW[k] += ((k === activePreset ? 1 : 0) - presetW[k]) * a;
+  if (activePreset && !(activePreset in presetW)) presetW[activePreset] = 0;
+  for (const k in presetW) presetW[k] += ((k === activePreset ? 1 : 0) - presetW[k]) * a;
   gestureW += ((($('#optGesture').checked && now - grip.peaceAt < 0.5) ? 1 : 0) - gestureW) * a;
   const m = micMouth(dt);
   const e = { ...exprState };
@@ -1751,7 +1774,7 @@ function extrasBeforeUpdate(dt, now) {
     e.blinkLeft = Math.max(e.blinkLeft ?? 0, b); e.blinkRight = Math.max(e.blinkRight ?? 0, b);
     avatar.vrm?.lookAt?.lookAt(camera.position);
   }
-  for (const k of PRESETS) e[k] = Math.max(e[k] ?? 0, presetW[k]);
+  for (const k in presetW) e[k] = Math.max(e[k] ?? 0, presetW[k]);
   e.happy = Math.max(e.happy ?? 0, gestureW);
   if (m) for (const k in m) e[k] = Math.max(e[k] ?? 0, Math.min(1, m[k]));
   extraExpr = e;
@@ -2323,6 +2346,27 @@ async function renderOwn() {
     grid.prepend(card);
   }
 }
+
+
+/* ---- float the avatar over other apps (Document Picture-in-Picture, Chrome / Edge 116+) ---- */
+$('#pipBtn').onclick = async () => {
+  if (pipWin) { pipWin.close(); return; }
+  if (!window.documentPictureInPicture) { toast('このブラウザは小窓表示に対応していません', 'Chrome か Edge の最新版で試してください。', 'info'); return; }
+  try {
+    pipWin = await documentPictureInPicture.requestWindow({ width: 360, height: 480 });
+  } catch { toast('小窓を開けませんでした', 'ボタンをもう一度押してください。', 'info'); return; }
+  const d = pipWin.document;
+  d.body.style.cssText = 'margin:0;background:#000;overflow:hidden;height:100vh';
+  d.body.append(canvas); // the WebGL canvas moves into the small window and keeps drawing
+  canvas.style.cssText = 'width:100vw;height:100vh;display:block';
+  const fit = () => { const w = pipWin.innerWidth, h = pipWin.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); fitBackground(); };
+  pipWin.addEventListener('resize', fit); fit();
+  $('#pipBtn').textContent = '小窓を閉じて元に戻す';
+  pipWin.addEventListener('pagehide', () => {
+    stage.prepend(canvas); canvas.style.cssText = ''; pipWin = null;
+    $('#pipBtn').textContent = 'デスクトップに浮かべる（小窓）'; resize(); fitBackground();
+  });
+};
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
