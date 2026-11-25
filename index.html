@@ -140,6 +140,17 @@ label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; wi
 .toggle input:disabled { opacity: .4; cursor: not-allowed; }
 .toggle:has(input:disabled) { cursor: not-allowed; }
 .privacy { display: grid; gap: 10px; margin-top: 12px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.btn.sm { padding: 6px 6px; font-size: 12px; justify-content: center; }
+.btn[aria-pressed="true"]:not(.rec) { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #232734); }
+.btn kbd { font: 10px var(--font-mono); color: var(--muted); margin-left: 3px; }
+/* streaming mode: only the 3D stage, full window */
+body.stream .bar, body.stream .panel, body.stream .views, body.stream .toast { display: none !important; }
+body.stream .app { grid-template-rows: 1fr; }
+body.stream .main { grid-template-columns: 1fr; }
+.stream-exit { position: absolute; top: 12px; right: 12px; z-index: 5; opacity: 0; transition: opacity .3s; }
+.stream-exit.show { opacity: 1; }
 
 .slider { display: grid; gap: 4px; }
 .slider .top { display: flex; justify-content: space-between; }
@@ -210,6 +221,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
         </div>
       </div>
 
+      <button type="button" class="btn stream-exit" id="streamExit" hidden>配信モードを終わる（Esc）</button>
       <div class="toast" id="toast" role="alert" hidden><b id="toastTitle"></b><span id="toastBody"></span><button type="button" id="toastClose">閉じる</button></div>
     </main>
 
@@ -279,6 +291,54 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
         <h2>録画</h2>
         <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
         <p class="hint">停止すると .webm ファイルとして保存されます。</p>
+        <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）</button>
+      </section>
+
+      <section class="sec">
+        <h2>配信</h2>
+        <label for="optBg">背景</label>
+        <select id="optBg" aria-label="背景">
+          <option value="studio" selected>スタジオ（既定）</option>
+          <option value="green">グリーンバック（OBSで抜く用）</option>
+          <option value="blue">ブルーバック</option>
+          <option value="white">白</option>
+          <option value="black">黒</option>
+          <option value="image">画像を読み込む…</option>
+        </select>
+        <input type="file" id="bgFile" accept="image/*" hidden>
+        <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）</button>
+        <p class="hint">OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
+      </section>
+
+      <section class="sec">
+        <h2>表情</h2>
+        <div class="grid5" id="exprBtns">
+          <button type="button" class="btn sm" data-expr="happy" aria-pressed="false">喜<kbd>1</kbd></button>
+          <button type="button" class="btn sm" data-expr="angry" aria-pressed="false">怒<kbd>2</kbd></button>
+          <button type="button" class="btn sm" data-expr="sad" aria-pressed="false">哀<kbd>3</kbd></button>
+          <button type="button" class="btn sm" data-expr="surprised" aria-pressed="false">驚<kbd>4</kbd></button>
+          <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
+        </div>
+        <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
+        <div class="slider">
+          <div class="top"><label for="optMicGain">マイク感度</label><output id="micGainOut">50</output></div>
+          <input type="range" id="optMicGain" min="0" max="100" value="50">
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>小物</h2>
+        <div class="grid3" id="propBtns">
+          <button type="button" class="btn sm" data-prop="ball">ボール</button>
+          <button type="button" class="btn sm" data-prop="box">箱</button>
+          <button type="button" class="btn sm" data-prop="mic">マイク</button>
+          <button type="button" class="btn sm" data-prop="light">ペンライト</button>
+          <button type="button" class="btn sm" data-prop="heart">ハート</button>
+          <button type="button" class="btn sm" id="propClear">全部消す</button>
+        </div>
+        <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
+        <p class="hint">手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。</p>
       </section>
 
       <section class="sec">
@@ -591,6 +651,7 @@ function basisQuat(x, yApprox, out = new Q()) {
   return out.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
 }
 function setAvatar(a) {
+  releaseAllProps(); // props held in a hand would be disposed with the old avatar
   if (avatar) { scene.remove(avatar.root); avatar.dispose?.(); }
   avatar = a;
   scene.add(a.root);
@@ -746,6 +807,11 @@ function solveHand(s, world, t, alpha) {
   for (const [f, segs, idx] of FINGER_DEFS) {
     segs.forEach((g, k) => aim(s + f + g, H[idx[k + 1]].clone().sub(H[idx[k]]), alpha));
   }
+  // how closed the hand is (0 = open, 1 = fist): fingertip-to-wrist distance relative to knuckle-to-wrist
+  let r = 0;
+  for (const [mcp, tip] of [[5, 8], [9, 12], [13, 16], [17, 20]]) r += H[tip].distanceTo(H[0]) / Math.max(1e-6, H[mcp].distanceTo(H[0]));
+  grip[s] = THREE.MathUtils.clamp((1.7 - r / 4) / 0.55, 0, 1);
+  grip[s + 'At'] = t;
 }
 
 /* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
@@ -1348,7 +1414,9 @@ function tick() {
     pump();
     withTargets(() => idle(dt, now));
     easeToTargets(dt);
+    extrasBeforeUpdate(dt, now);
     avatar.update(dt);
+    extrasAfterUpdate(dt, now);
   }
   if (viewTween) {
     const k = Math.min(1, (performance.now() - viewTween.t0) / 600), e = 1 - (1 - k) ** 3;
@@ -1432,7 +1500,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1449,6 +1517,9 @@ function loadSettings() {
   $('#jiggleOut').textContent = $('#optJiggle').value;
   $('#pip').classList.toggle('mirror', opts.mirror);
   applyPreview();
+  if ($('#optBg').value === 'image') $('#optBg').value = 'studio'; // the image itself is not stored
+  $('#micGainOut').textContent = $('#optMicGain').value;
+  applyBackground();
   return saved.model ?? null;
 }
 function saveSettings() {
@@ -1460,6 +1531,241 @@ function saveSettings() {
 }
 document.querySelector('.panel').addEventListener('change', saveSettings);
 
+
+/* ================================================================
+   Extras: background, streaming mode, screenshot, expressions, mic lip sync, grabbable props
+   ================================================================ */
+const grip = { left: 0, right: 0, leftAt: -1e9, rightAt: -1e9 };
+
+/* ---- background ---- */
+const STUDIO_BG = 0x171a23, studioFog = scene.fog;
+const BG_COLORS = { green: 0x00ff00, blue: 0x0047bb, white: 0xffffff, black: 0x000000 };
+let bgTex = null;
+function fitBackground() {
+  // "cover" the canvas with the image instead of stretching it
+  if (!bgTex?.image) return;
+  const ia = bgTex.image.width / bgTex.image.height, ca = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+  if (ca > ia) bgTex.repeat.set(1, ia / ca); else bgTex.repeat.set(ca / ia, 1);
+  bgTex.offset.set((1 - bgTex.repeat.x) / 2, (1 - bgTex.repeat.y) / 2);
+}
+function applyBackground() {
+  const v = $('#optBg').value, studio = v === 'studio';
+  floor.visible = ring.visible = grid.visible = studio;
+  scene.fog = studio ? studioFog : null;
+  if (v === 'image' && bgTex) { fitBackground(); scene.background = bgTex; }
+  else scene.background = new THREE.Color(studio || v === 'image' ? STUDIO_BG : BG_COLORS[v]);
+}
+$('#optBg').onchange = () => { if ($('#optBg').value === 'image' && !bgTex) $('#bgFile').click(); applyBackground(); };
+$('#bgFile').onchange = (e) => {
+  const f = e.target.files[0]; if (!f) { if (!bgTex) { $('#optBg').value = 'studio'; applyBackground(); } return; }
+  new THREE.TextureLoader().load(URL.createObjectURL(f), (tex) => {
+    bgTex?.dispose(); tex.colorSpace = THREE.SRGBColorSpace; bgTex = tex;
+    $('#optBg').value = 'image'; applyBackground();
+  }, undefined, () => toast('画像を読み込めませんでした', 'jpg / png / webp の画像を選んでください。'));
+  e.target.value = '';
+};
+new ResizeObserver(fitBackground).observe(stage);
+
+/* ---- streaming mode ---- */
+let exitTimer = null;
+function setStreamMode(on) {
+  document.body.classList.toggle('stream', on);
+  $('#streamExit').hidden = !on;
+  if (on) showExit();
+  requestAnimationFrame(resize);
+}
+function showExit() {
+  $('#streamExit').classList.add('show');
+  clearTimeout(exitTimer); exitTimer = setTimeout(() => $('#streamExit').classList.remove('show'), 2000);
+}
+$('#streamBtn').onclick = () => setStreamMode(true);
+$('#streamExit').onclick = () => setStreamMode(false);
+stage.addEventListener('pointermove', () => { if (document.body.classList.contains('stream')) showExit(); });
+
+/* ---- screenshot ---- */
+const stamp = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
+function download(url, name) { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); }
+$('#shotBtn').onclick = () => {
+  renderer.render(scene, camera); // read the canvas in the same task as the draw
+  download(canvas.toDataURL('image/png'), `mocap-${stamp()}.png`);
+};
+
+/* ---- expression presets (buttons / keys 1-5) ---- */
+const PRESETS = ['happy', 'angry', 'sad', 'surprised', 'relaxed'];
+const presetW = Object.fromEntries(PRESETS.map(k => [k, 0]));
+let activePreset = null;
+function setPreset(k) {
+  activePreset = k === activePreset ? null : k;
+  document.querySelectorAll('#exprBtns button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.expr === activePreset)));
+}
+document.querySelectorAll('#exprBtns button').forEach(b => b.onclick = () => setPreset(b.dataset.expr));
+addEventListener('keydown', (e) => {
+  if (e.target.closest?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Escape' && document.body.classList.contains('stream')) { setStreamMode(false); return; }
+  if (e.key >= '1' && e.key <= '5') setPreset(PRESETS[+e.key - 1]);
+  else if (e.key === '0') setPreset(null);
+});
+
+/* ---- microphone lip sync (local only: the sound is analysed and discarded) ---- */
+const mic = { stream: null, ctx: null, an: null, buf: null, fbuf: null, level: 0, vow: 0.5 };
+async function setMic(on) {
+  if (!on) { mic.stream?.getTracks().forEach(t => t.stop()); mic.ctx?.close(); Object.assign(mic, { stream: null, ctx: null, an: null, level: 0 }); return; }
+  try {
+    mic.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    mic.ctx = new AudioContext();
+    mic.an = mic.ctx.createAnalyser(); mic.an.fftSize = 1024;
+    mic.ctx.createMediaStreamSource(mic.stream).connect(mic.an);
+    mic.buf = new Float32Array(mic.an.fftSize); mic.fbuf = new Uint8Array(mic.an.frequencyBinCount);
+  } catch (e) {
+    $('#optMic').checked = false;
+    toast('マイクを使えませんでした', 'ブラウザのマイクの許可を確認してください。');
+  }
+}
+$('#optMic').onchange = () => setMic($('#optMic').checked);
+$('#optMicGain').oninput = () => { $('#micGainOut').textContent = $('#optMicGain').value; };
+function micMouth(dt) {
+  if (!mic.an) return null;
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let sum = 0; for (const v of mic.buf) sum += v * v;
+  const rms = Math.sqrt(sum / mic.buf.length), gain = 0.3 + 2.7 * (+$('#optMicGain').value / 100);
+  const target = THREE.MathUtils.clamp((rms * gain - 0.015) / 0.1, 0, 1);
+  mic.level += (target - mic.level) * (1 - Math.exp(-dt * (target > mic.level ? 30 : 12))); // open fast, close a bit slower
+  // rough vowel colour from where the energy sits (low = o/u, high = i/e)
+  mic.an.getByteFrequencyData(mic.fbuf);
+  const hz = mic.ctx.sampleRate / mic.an.fftSize; let wsum = 0, esum = 0;
+  for (let i = Math.floor(250 / hz); i < 3500 / hz; i++) { wsum += mic.fbuf[i] * i * hz; esum += mic.fbuf[i]; }
+  if (esum > 0) mic.vow += (THREE.MathUtils.clamp((wsum / esum - 700) / 1400, 0, 1) - mic.vow) * 0.2;
+  const L = mic.level, c = mic.vow;
+  return { aa: L * (1 - Math.abs(c - 0.5)), ih: L * Math.max(0, c - 0.6) * 1.6, ou: L * Math.max(0, 0.4 - c) * 1.6, ee: L * Math.max(0, c - 0.45) * 0.8, oh: L * Math.max(0, 0.55 - c) * 0.9 };
+}
+
+let extraExpr = {};
+function extrasBeforeUpdate(dt, now) {
+  const a = 1 - Math.exp(-dt * 10);
+  for (const k of PRESETS) presetW[k] += ((k === activePreset ? 1 : 0) - presetW[k]) * a;
+  const m = micMouth(dt);
+  const e = { ...exprState };
+  for (const k of PRESETS) e[k] = Math.max(e[k] ?? 0, presetW[k]);
+  if (m) for (const k in m) e[k] = Math.max(e[k] ?? 0, Math.min(1, m[k]));
+  extraExpr = e;
+  avatar.expr(e);
+}
+
+/* ---- grabbable props ---- */
+const props = [];
+const PROP_MAX = 12;
+const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.05, ...extra });
+function makeProp(kind) {
+  const g = new THREE.Group(); let r = 0.07;
+  if (kind === 'ball') {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 32, 16), mat(0xff7a59));
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.0702, 0.008, 8, 48), mat(0xffffff));
+    g.add(m, band);
+  } else if (kind === 'box') {
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), mat(0x7cc4ff))); r = 0.075;
+  } else if (kind === 'mic') {
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.012, 0.16, 20), mat(0x2b2f3a, { metalness: 0.6, roughness: 0.3 }));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.034, 24, 16), mat(0xc9ced8, { metalness: 0.8, roughness: 0.35 }));
+    head.position.y = 0.1; g.add(handle, head); r = 0.07;
+  } else if (kind === 'light') {
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.22, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff66cc, emissiveIntensity: 2.2, transparent: true, opacity: 0.9 }));
+    stick.position.y = 0.05;
+    const grip_ = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.08, 16), mat(0x1c1e25));
+    grip_.position.y = -0.1; g.add(stick, grip_); g.userData.glow = stick.material; r = 0.075;
+  } else if (kind === 'heart') {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, -0.06); sh.bezierCurveTo(-0.09, 0, -0.07, 0.07, 0, 0.035); sh.bezierCurveTo(0.07, 0.07, 0.09, 0, 0, -0.06);
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.03, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.008, bevelSegments: 3 });
+    geo.center();
+    g.add(new THREE.Mesh(geo, mat(0xff5c8a, { roughness: 0.3 })));
+  }
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+  return { kind, mesh: g, r, vel: new V3(), spin: new V3(), held: null };
+}
+function spawnProp(kind) {
+  if (props.length >= PROP_MAX) { toast('これ以上は出せません', `小物は${PROP_MAX}個までです。「全部消す」で片付けられます。`, 'info'); return; }
+  const p = makeProp(kind), c = avatar?.rest?.pos?.chest ?? new V3(0, 1.2, 0);
+  const i = props.length;
+  p.mesh.position.set(c.x + ((i % 3) - 1) * 0.22, c.y + 0.05 + Math.floor(i / 3) * 0.1, c.z + 0.32);
+  p.spin.set(0, 0.6, 0);
+  scene.add(p.mesh); props.push(p);
+}
+function dropProp(p, v) { scene.attach(p.mesh); p.held = null; if (v) p.vel.copy(v); }
+function releaseAllProps() { for (const p of props) if (p.held) dropProp(p); }
+document.querySelectorAll('#propBtns [data-prop]').forEach(b => b.onclick = () => spawnProp(b.dataset.prop));
+$('#propClear').onclick = () => {
+  for (const p of props) { p.mesh.removeFromParent(); p.mesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); }
+  props.length = 0;
+};
+const hands = { left: { pos: new V3(), prev: null, vel: new V3(), holding: null }, right: { pos: new V3(), prev: null, vel: new V3(), holding: null } };
+const _a = new V3(), _b = new V3();
+function updateHands(dt, now) {
+  for (const s of SIDES) {
+    const h = hands[s], hb = avatar.bone(s + 'Hand'), mb = avatar.bone(s + 'MiddleProximal');
+    if (!hb) { h.prev = null; continue; }
+    hb.getWorldPosition(_a);
+    if (mb) { mb.getWorldPosition(_b); _a.lerp(_b, 0.7); }
+    if (h.prev) h.vel.lerp(_b.copy(_a).sub(h.prev).divideScalar(Math.max(dt, 1e-3)), 0.35); else h.vel.set(0, 0, 0);
+    h.prev = (h.prev ?? new V3()).copy(_a); h.pos.copy(_a);
+    const fresh = now - grip[s + 'At'] < 0.5, closed = fresh && grip[s] > 0.6, open = !fresh || grip[s] < 0.35;
+    if (h.holding && open) { dropProp(h.holding, h.vel.clone().multiplyScalar(0.9)); h.holding = null; }
+    else if (!h.holding && closed && !h.wasClosed) {
+      // grab the nearest free prop within reach (only on the moment the hand closes)
+      let best = null, bd = Infinity;
+      for (const p of props) { if (p.held) continue; const d = p.mesh.position.distanceTo(h.pos) - p.r; if (d < 0.09 && d < bd) { bd = d; best = p; } }
+      if (best) { best.held = s; h.holding = best; hb.attach(best.mesh); best.vel.set(0, 0, 0); best.spin.set(0, 0, 0); }
+    }
+    h.wasClosed = closed;
+  }
+}
+function stepProps(dt) {
+  const gravity = $('#optGravity').checked;
+  for (const p of props) {
+    if (p.held) continue;
+    const m = p.mesh;
+    if (gravity) p.vel.y -= 9.8 * dt;
+    else p.vel.multiplyScalar(Math.exp(-dt * 1.6));
+    m.position.addScaledVector(p.vel, dt);
+    // open hands push free props
+    for (const s of SIDES) {
+      if (hands[s].holding === p || !hands[s].prev) continue;
+      const d = _a.copy(m.position).sub(hands[s].pos), dist = d.length(), minD = p.r + 0.045;
+      if (dist < minD && dist > 1e-6) {
+        m.position.addScaledVector(d, (minD - dist) / dist);
+        const vn = hands[s].vel.dot(d) / dist;
+        if (vn > 0) p.vel.addScaledVector(d, vn / dist * 1.1);
+        p.spin.add(_b.crossVectors(d, hands[s].vel).multiplyScalar(4));
+      }
+    }
+    p.spin.multiplyScalar(Math.exp(-dt * 0.8));
+    const w = p.spin.length(); if (w > 1e-4) m.quaternion.premultiply(_tmp.setFromAxisAngle(_b.copy(p.spin).divideScalar(w), w * dt));
+  }
+  // props push each other apart
+  for (let i = 0; i < props.length; i++) for (let j = i + 1; j < props.length; j++) {
+    const A = props[i], B = props[j]; if (A.held && B.held) continue;
+    const d = _a.copy(B.mesh.position).sub(A.mesh.position), dist = d.length(), minD = A.r + B.r;
+    if (dist < minD && dist > 1e-6 && !A.held && !B.held) {
+      d.multiplyScalar((minD - dist) / dist / 2); A.mesh.position.sub(d); B.mesh.position.add(d);
+      const t = A.vel.clone(); A.vel.lerp(B.vel, 0.5); B.vel.lerp(t, 0.5);
+    }
+  }
+  // floor and a soft wall last, so nothing above can push a prop through the floor
+  for (const p of props) {
+    if (p.held) continue;
+    const m = p.mesh;
+    if (m.position.y < p.r) { m.position.y = p.r; if (p.vel.y < 0) p.vel.y *= -0.55; p.vel.x *= 0.92; p.vel.z *= 0.92; p.spin.multiplyScalar(0.9); }
+    const hr = Math.hypot(m.position.x, m.position.z);
+    if (hr > 2.3) { m.position.x *= 2.3 / hr; m.position.z *= 2.3 / hr; p.vel.x *= -0.5; p.vel.z *= -0.5; }
+    if (m.position.y > 4) { m.position.y = 4; p.vel.y = -Math.abs(p.vel.y) * 0.5; }
+  }
+  const hue = (performance.now() / 4000) % 1;
+  for (const p of props) if (p.mesh.userData.glow) p.mesh.userData.glow.emissive.setHSL(hue, 1, 0.55);
+}
+function extrasAfterUpdate(dt, now) {
+  updateHands(dt, now);
+  stepProps(dt);
+}
+
 /* ---------------- Boot ---------------- */
 const savedModel = loadSettings();
 applyRenderQuality();
@@ -1470,7 +1776,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
