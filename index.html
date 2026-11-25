@@ -118,6 +118,8 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 .cur-tx span { font-size: 11px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
 .chip.hold { color: var(--fg); border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 .chip.hold::before { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.br-card .del { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: rgba(13,15,20,.8); color: var(--fg); font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
+.br-card .del:hover { border-color: var(--rec); color: var(--rec); }
 .br-empty { grid-column: 1 / -1; color: var(--muted); text-align: center; padding: 24px 0; }
 
 .panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding-block: 8px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; align-content: start; gap: 4px; }
@@ -263,6 +265,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn" id="mannequinBtn">マネキン</button>
           <label class="btn file">自分のVRM<input type="file" id="vrmFile" accept=".vrm"></label>
         </div>
+        <label class="toggle"><span>読み込んだVRMをこのブラウザに保存<small>次からは「モデルを選ぶ」に出ます。保存先はこのブラウザの中だけです</small></span><input type="checkbox" id="optSaveVrm" checked></label>
       </section>
 
       <section class="sec">
@@ -282,6 +285,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle">手と指<input type="checkbox" id="optHands" checked></label>
         <label class="toggle"><span>脚<small>膝と足首が映っているときだけ動かします</small></span><input type="checkbox" id="optLegs" checked></label>
         <label class="toggle"><span>ミラー<small>鏡のように同じ側の手が動きます</small></span><input type="checkbox" id="optMirror" checked></label>
+        <label class="toggle"><span>体の位置も動かす<small>左右に動く・しゃがむとアバターも移動します（「正面リセット」の位置が基準）</small></span><input type="checkbox" id="optMove"></label>
         <div class="slider">
           <div class="top"><label for="optSmooth">なめらかさ</label><output id="smoothOut">45</output></div>
           <input type="range" id="optSmooth" min="0" max="100" value="45">
@@ -821,6 +825,11 @@ const seen = { pose: -1e9, face: -1e9, left: -1e9, right: -1e9 };
 const exprState = {};
 
 function solvePose(world, norm, t, alpha) {
+  // where the shoulders are in the image (pixels), for "体の位置も動かす"
+  if ((norm[11].visibility ?? 1) > 0.5 && (norm[12].visibility ?? 1) > 0.5) {
+    const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
+    bodyPos.raw = { x: (norm[11].x + norm[12].x) / 2 * vw, y: (norm[11].y + norm[12].y) / 2 * vh, w: Math.hypot((norm[11].x - norm[12].x) * vw, (norm[11].y - norm[12].y) * vh), t };
+  }
   const W = filters.pose.apply(world.map(conv), t);
   const vis = (i) => norm[i].visibility ?? 1;
   const P = (s, part) => W[pidx(s, part)];
@@ -1302,10 +1311,18 @@ function renderPicker() {
 async function loadModel(m) {
   if (await tryLoadVRM(m.url, m.name, m.credit)) { currentModelId = m.id; $('#curThumb').style.backgroundImage = `url("${m.thumb}")`; saveSettings(); }
 }
-$('#pickBtn').onclick = () => { renderPicker(); dlg.showModal(); };
+$('#pickBtn').onclick = () => { renderPicker(); renderOwn(); dlg.showModal(); };
 $('#brClose').onclick = () => dlg.close();
 dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
-$('#vrmFile').onchange = async (e) => { const f = e.target.files[0]; if (f && await tryLoadVRM(URL.createObjectURL(f), f.name, '自分のファイル')) { currentModelId = null; $('#curThumb').style.backgroundImage = ''; } };
+$('#vrmFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (!await tryLoadVRM(URL.createObjectURL(f), f.name.replace(/\.vrm$/i, ''), '自分のファイル')) return;
+  currentModelId = null; $('#curThumb').style.backgroundImage = '';
+  if ($('#optSaveVrm').checked) {
+    const id = await saveOwnVRM(f);
+    if (id != null) { currentModelId = 'own:' + id; saveSettings(); const t = await setOwnThumb(id); if (t) $('#curThumb').style.backgroundImage = `url("${t}")`; }
+  }
+};
 
 /* ---------------- Overlay drawing ---------------- */
 const overlay = $('#overlay'), octx = overlay.getContext('2d');
@@ -1576,7 +1593,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1614,6 +1631,7 @@ document.querySelector('.panel').addEventListener('change', saveSettings);
    Extras: background, streaming mode, screenshot, expressions, mic lip sync, grabbable props
    ================================================================ */
 const grip = { left: 0, right: 0, leftAt: -1e9, rightAt: -1e9, peaceAt: -1e9 };
+const bodyPos = { raw: null, ref: null, off: new V3(), avatar: null, rest: null };
 
 /* ---- background ---- */
 const STUDIO_BG = 0x171a23, studioFog = scene.fog;
@@ -1739,6 +1757,7 @@ function extrasBeforeUpdate(dt, now) {
   extraExpr = e;
   avatar.expr(e);
   applyPlayback(dt);
+  stepBodyPos(dt, now);
 }
 
 /* ---- grabbable props ---- */
@@ -2217,6 +2236,94 @@ $('#optSpeech').onchange = () => {
   } else { const r = rec; rec = null; r?.stop(); speechStatus(''); }
 };
 
+
+/* ---- body position: shoulder centre in the image -> hips translation (meters, via the shoulder width) ---- */
+function stepBodyPos(dt, now) {
+  const hips = avatar?.bone('hips'); if (!hips) return;
+  if (bodyPos.avatar !== avatar) { bodyPos.avatar = avatar; bodyPos.rest = hips.position.clone(); bodyPos.off.set(0, 0, 0); }
+  if (play.clip) return; // motion playback drives the hips itself
+  const r = bodyPos.raw, fresh = r && now - r.t < 0.7 && $('#optMove').checked && opts.body;
+  const target = new V3();
+  if (fresh) {
+    if (!bodyPos.ref) bodyPos.ref = { ...r };
+    const R = avatar.rest.pos, shoulderW = R.leftUpperArm && R.rightUpperArm ? R.leftUpperArm.distanceTo(R.rightUpperArm) : 0.3;
+    const k = shoulderW / Math.max(1, r.w); // meters per pixel at the user's distance
+    target.set((opts.mirror ? -1 : 1) * (r.x - bodyPos.ref.x) * k, -(r.y - bodyPos.ref.y) * k, 0);
+    target.x = THREE.MathUtils.clamp(target.x, -0.8, 0.8); target.y = THREE.MathUtils.clamp(target.y, -0.6, 0.25);
+  }
+  bodyPos.off.lerp(target, 1 - Math.exp(-dt * (fresh ? 8 : 2)));
+  const flip = isVRM0() ? -1 : 1; // VRM 0.x bone frames are turned 180°
+  hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y, bodyPos.rest.z);
+}
+const calibOrig = $('#calibBtn').onclick;
+$('#calibBtn').onclick = () => { calibOrig(); bodyPos.ref = null; };
+$('#optMove').onchange = () => { bodyPos.ref = null; };
+
+/* ---- your own VRM files, kept in this browser (IndexedDB) ---- */
+const idb = { db: null };
+function openDB() {
+  if (idb.db) return Promise.resolve(idb.db);
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open('mirror-mocap', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('vrms', { keyPath: 'id', autoIncrement: true });
+    rq.onsuccess = () => { idb.db = rq.result; res(idb.db); }; rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbDo(mode, fn) {
+  const db = await openDB();
+  return new Promise((res, rej) => { const tx = db.transaction('vrms', mode), st = tx.objectStore('vrms'); const rq = fn(st); tx.oncomplete = () => res(rq?.result); tx.onerror = () => rej(tx.error); });
+}
+const ownList = () => idbDo('readonly', st => st.getAll()).catch(() => []);
+async function saveOwnVRM(file) {
+  try {
+    const list = await ownList();
+    const same = list.find(v => v.name === file.name && v.size === file.size);
+    if (same) return same.id;
+    const data = await file.arrayBuffer();
+    return await idbDo('readwrite', st => st.add({ name: file.name, size: file.size, data, thumb: '', added: Date.now() }));
+  } catch (e) { console.warn(e); toast('このブラウザに保存できませんでした', '空き容量が足りない可能性があります（読み込み自体はできています）。', 'info'); return null; }
+}
+async function setOwnThumb(id) {
+  // a small picture of the avatar's face for the model list
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const keep = { p: camera.position.clone(), t: controls.target.clone() };
+  const hp = avatar.bone('head')?.getWorldPosition(new V3()); if (!hp) return;
+  camera.position.set(hp.x, hp.y + 0.05, hp.z + 0.75); camera.lookAt(hp.x, hp.y + 0.05, hp.z);
+  renderer.render(scene, camera);
+  const c = document.createElement('canvas'); c.width = c.height = 160;
+  const s = Math.min(canvas.width, canvas.height);
+  c.getContext('2d').drawImage(canvas, (canvas.width - s) / 2, (canvas.height - s) / 2, s, s, 0, 0, 160, 160);
+  camera.position.copy(keep.p); camera.lookAt(keep.t);
+  const thumb = c.toDataURL('image/jpeg', 0.8);
+  await idbDo('readwrite', st => { const g = st.get(id); g.onsuccess = () => { if (g.result) { g.result.thumb = thumb; st.put(g.result); } }; return g; }).catch(() => {});
+  return thumb;
+}
+async function loadOwn(v) {
+  const url = URL.createObjectURL(new Blob([v.data]));
+  if (await tryLoadVRM(url, v.name.replace(/\.vrm$/i, ''), '自分のファイル（このブラウザに保存）')) {
+    currentModelId = 'own:' + v.id; $('#curThumb').style.backgroundImage = v.thumb ? `url("${v.thumb}")` : ''; saveSettings();
+    if (!v.thumb) { const t = await setOwnThumb(v.id); if (t) $('#curThumb').style.backgroundImage = `url("${t}")`; }
+  }
+}
+async function renderOwn() {
+  const list = await ownList(), grid = $('#brGrid');
+  grid.querySelectorAll('.own').forEach(n => n.remove());
+  for (const v of list.reverse()) {
+    const card = document.createElement('div'); card.className = 'br-card own'; card.tabIndex = 0; card.setAttribute('role', 'button');
+    card.setAttribute('aria-current', String(currentModelId === 'own:' + v.id));
+    const th = document.createElement('div'); th.className = 'th';
+    if (v.thumb) { const img = document.createElement('img'); img.src = v.thumb; img.alt = ''; th.append(img); } else th.textContent = 'VRM';
+    const lic = document.createElement('i'); lic.className = 'lic'; lic.textContent = '自分';
+    const nm = document.createElement('span'); nm.textContent = v.name.replace(/\.vrm$/i, '');
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '×'; del.title = 'このブラウザから消す'; del.setAttribute('aria-label', v.name + ' をこのブラウザから消す');
+    del.onclick = async (e) => { e.stopPropagation(); if (!confirm(`「${v.name}」をこのブラウザから消しますか？（元のファイルは消えません）`)) return; await idbDo('readwrite', st => st.delete(v.id)); renderOwn(); };
+    card.append(th, lic, nm, del);
+    const go = () => { dlg.close(); loadOwn(v); };
+    card.onclick = go; card.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    grid.prepend(card);
+  }
+}
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -2439,13 +2546,15 @@ function extrasAfterUpdate(dt, now) {
 const savedModel = loadSettings();
 applyRenderQuality();
 setAvatar(buildMannequin());
-loadModel(MODELS.find(m => m.id === savedModel) ?? MODELS[0]); // stays on the mannequin if offline
+if (String(savedModel).startsWith('own:')) {
+  ownList().then(list => { const v = list.find(x => 'own:' + x.id === savedModel); if (v) loadOwn(v); else loadModel(MODELS[0]); });
+} else loadModel(MODELS.find(m => m.id === savedModel) ?? MODELS[0]); // stays on the mannequin if offline
 tick();
 if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, bodyPos, ownList, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
