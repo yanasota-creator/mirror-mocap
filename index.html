@@ -321,11 +321,19 @@ body.stream .stage { height: 100%; min-height: 0; }
         <h2>外部連携</h2>
         <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
         <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
+        <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
+      </section>
+
+      <section class="sec">
+        <h2>吹き出し・チャット</h2>
         <div class="chat">
-          <input type="text" id="chatText" maxlength="144" placeholder="VRChat のチャットボックスに送る" aria-label="VRChat のチャットボックスに送る文字">
+          <input type="text" id="chatText" maxlength="144" placeholder="しゃべらせたい文字（Enter で送信）" aria-label="吹き出しに出す文字">
           <button type="button" class="btn sm" id="chatSend">送信</button>
         </div>
-        <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
+        <label class="toggle"><span>画面に吹き出しを出す<small>アバターの頭の横に表示して、数秒で消えます</small></span><input type="checkbox" id="optBubble" checked></label>
+        <label class="toggle"><span>VRChat のチャットボックスにも送る<small>「PCブリッジに送信」がオンのときに使えます</small></span><input type="checkbox" id="optChatVrc" checked></label>
+        <label class="toggle"><span>音声認識で入力（字幕）<small>話した言葉を文字にして送ります。<b>音声は Google の音声認識サービスに送られます</b>（Chrome / Edge）</small></span><input type="checkbox" id="optSpeech"></label>
+        <p class="status" id="speechStatus" aria-live="polite"></p>
       </section>
 
       <section class="sec">
@@ -1568,7 +1576,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -2131,6 +2139,84 @@ function applyPlayback(dt) {
   }
 }
 
+
+/* ---- speech bubble above the avatar's head ---- */
+const bubble = { sp: null, until: 0, canvas: document.createElement('canvas') };
+function showBubble(text, final = true) {
+  const c = bubble.canvas, g = c.getContext('2d'), W = 1024, pad = 44, font = 64, lh = 80;
+  g.font = `700 ${font}px ${getComputedStyle(document.body).fontFamily}`;
+  // wrap by characters (works for Japanese without spaces)
+  const lines = []; let cur = '';
+  for (const ch of text) { if (g.measureText(cur + ch).width > W - pad * 2 - 20) { lines.push(cur); cur = ch; } else cur += ch; }
+  if (cur) lines.push(cur);
+  const shown = lines.slice(-4), w = Math.min(W, Math.max(...shown.map(l => g.measureText(l).width)) + pad * 2), h = shown.length * lh + pad * 2;
+  c.width = W; c.height = h + 50;
+  g.font = `700 ${font}px ${getComputedStyle(document.body).fontFamily}`;
+  const x0 = (W - w) / 2;
+  g.fillStyle = 'rgba(255,255,255,0.96)'; g.strokeStyle = '#23262f'; g.lineWidth = 8;
+  g.beginPath(); g.roundRect(x0 + 4, 4, w - 8, h - 8, 40);
+  g.moveTo(x0 + 70, h - 6); g.lineTo(x0 + 40, h + 42); g.lineTo(x0 + 130, h - 6); g.fill(); g.stroke();
+  g.fillStyle = 'rgba(255,255,255,0.96)'; g.fillRect(x0 + 74, h - 14, 52, 12); // hide the outline where the tail joins
+  g.fillStyle = final ? '#1b1d24' : '#6a7080'; g.textBaseline = 'top';
+  shown.forEach((l, i) => g.fillText(l, x0 + pad, pad + i * lh + (lh - font) / 2));
+  if (!bubble.sp) {
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    bubble.sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    bubble.sp.renderOrder = 10; scene.add(bubble.sp);
+  }
+  bubble.sp.material.map.dispose();
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; bubble.sp.material.map = tex;
+  bubble.aspect = c.height / W;
+  bubble.sp.material.opacity = 1; bubble.sp.visible = true;
+  bubble.until = performance.now() / 1000 + Math.min(12, 3 + text.length * 0.18);
+}
+function stepBubble(now) {
+  const sp = bubble.sp; if (!sp?.visible) return;
+  const head = avatar?.bone('head');
+  if (head) {
+    // same size on screen in every view: scale with the camera's distance (about 2 m in the upper-body view)
+    head.getWorldPosition(sp.position);
+    const f = THREE.MathUtils.clamp(camera.position.distanceTo(sp.position) / 2.1, 0.25, 2), w = 0.42 * f;
+    sp.scale.set(w, w * bubble.aspect, 1);
+    sp.position.x += 0.135 + 0.165 * f; sp.position.y += 0.1 * f + sp.scale.y / 2; // screen right of the head (always clear of it); the tail points back
+    // pull it back in if its right edge would leave the screen
+    const edge = (dx) => _pf.copy(sp.position).setX(sp.position.x + dx).project(camera).x;
+    const r = edge(w / 2), l = edge(-w / 2);
+    if (r > 0.97 && r > l) sp.position.x -= (r - 0.97) * w / (r - l);
+  }
+  const left = bubble.until - now;
+  sp.material.opacity = Math.min(1, Math.max(0, left / 0.5));
+  if (left <= 0) sp.visible = false;
+}
+
+/* ---- speech recognition -> bubble / VRChat chatbox (Chrome / Edge; audio goes to the browser's speech service) ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function speechStatus(t, cls = '') { const el = $('#speechStatus'); el.textContent = t; el.className = 'status ' + cls; }
+function startSpeech() {
+  if (!SR) { $('#optSpeech').checked = false; toast('このブラウザは音声認識に対応していません', 'Chrome か Edge で試してください。', 'info'); return; }
+  rec = new SR(); rec.lang = 'ja-JP'; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = (ev) => {
+    let interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i], t = r[0].transcript;
+      if (r.isFinal) { say(t); bridgeSend({ type: 'typing', on: false }); } else interim += t;
+    }
+    if (interim) { if ($('#optBubble').checked) showBubble(interim, false); if ($('#optChatVrc').checked) bridgeSend({ type: 'typing', on: true }); }
+  };
+  rec.onerror = (ev) => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { $('#optSpeech').checked = false; speechStatus('マイクか音声認識が許可されていません', 'bad'); rec = null; }
+  };
+  rec.onend = () => { if ($('#optSpeech').checked && rec) { try { rec.start(); } catch {} } else speechStatus(''); }; // keeps listening
+  try { rec.start(); speechStatus('聞き取り中…', 'ok'); } catch { speechStatus('開始できませんでした', 'bad'); }
+}
+$('#optSpeech').onchange = () => {
+  if ($('#optSpeech').checked) {
+    if (!confirm('音声認識をオンにします。\nあなたの声は、文字にするために Google の音声認識サービスに送られます（ブラウザの機能です）。\nよろしいですか？')) { $('#optSpeech').checked = false; return; }
+    startSpeech();
+  } else { const r = rec; rec = null; r?.stop(); speechStatus(''); }
+};
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -2200,11 +2286,15 @@ function bridgeFrame(now) {
   for (const k in extraExpr) blend[k] = r4(Math.min(1, Math.max(0, extraExpr[k] ?? 0)));
   bridgeSend({ type: 'frame', ...exportPose(), trackers: exportTrackers(), blend });
 }
-$('#chatSend').onclick = () => {
-  const t = $('#chatText').value.trim(); if (!t) return;
-  if (bridgeSend({ type: 'chat', text: t })) $('#chatText').value = '';
-  else toast('ブリッジにつながっていません', '「PCブリッジに送信」をオンにして、PCで bridge.py を起動してください。', 'info');
-};
+function say(text, { final = true } = {}) {
+  text = text.trim(); if (!text) return;
+  if ($('#optBubble').checked) showBubble(text, final);
+  if ($('#optChatVrc').checked && final) {
+    if (!bridgeSend({ type: 'chat', text }) && !$('#optBubble').checked)
+      toast('ブリッジにつながっていません', '「PCブリッジに送信」をオンにして、PCで bridge.py を起動してください。', 'info');
+  }
+}
+$('#chatSend').onclick = () => { const t = $('#chatText').value; if (t.trim()) { say(t); $('#chatText').value = ''; } };
 $('#chatText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) $('#chatSend').click(); });
 
 
@@ -2338,6 +2428,7 @@ function bvhCapture(now) {
 
 function extrasAfterUpdate(dt, now) {
   stepFx(dt, now);
+  stepBubble(now);
   updateHands(dt, now);
   stepProps(dt);
   bridgeFrame(now);
@@ -2354,7 +2445,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
