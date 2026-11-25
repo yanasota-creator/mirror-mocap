@@ -295,7 +295,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
       <section class="sec">
         <h2>録画</h2>
         <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
-        <p class="hint">停止すると .webm ファイルとして保存されます。</p>
+        <p class="hint">停止すると .webm ファイルとして保存されます。「マイクで口パク」がオンなら声も入ります。</p>
         <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）</button>
         <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録（BVH）</span></button>
         <p class="hint">BVH は動きだけのデータです。Blender・MMD（変換ツール経由）・Unity などに読み込めます。</p>
@@ -324,6 +324,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
           <option value="image">画像を読み込む…</option>
         </select>
         <input type="file" id="bgFile" accept="image/*" hidden>
+        <label for="optLight">照明</label>
+        <select id="optLight" aria-label="照明">
+          <option value="studio" selected>スタジオ（既定）</option>
+          <option value="bright">明るい</option>
+          <option value="sunset">夕焼け</option>
+          <option value="neon">ネオン</option>
+          <option value="night">夜</option>
+        </select>
         <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）</button>
         <p class="hint">OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
       </section>
@@ -338,6 +346,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
           <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
         </div>
         <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
         <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
         <div class="slider">
           <div class="top"><label for="optMicGain">マイク感度</label><output id="micGainOut">50</output></div>
@@ -357,6 +366,17 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
         </div>
         <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
         <p class="hint">手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。</p>
+      </section>
+
+      <section class="sec">
+        <h2>アクセサリー</h2>
+        <div class="grid2">
+          <label class="toggle">ねこ耳<input type="checkbox" id="accEars"></label>
+          <label class="toggle">王冠<input type="checkbox" id="accCrown"></label>
+          <label class="toggle">メガネ<input type="checkbox" id="accGlasses"></label>
+          <label class="toggle">天使の輪<input type="checkbox" id="accHalo"></label>
+        </div>
+        <p class="hint">頭に付いて一緒に動きます。モデルによって位置が少しずれることがあります。</p>
       </section>
 
       <section class="sec">
@@ -484,7 +504,8 @@ controls.target.set(0, 1.2, 0);
 controls.enableDamping = true;
 controls.update();
 
-scene.add(new THREE.HemisphereLight(0xd6defc, 0x2a2420, 1.1));
+const hemi = new THREE.HemisphereLight(0xd6defc, 0x2a2420, 1.1);
+scene.add(hemi);
 const key = new THREE.DirectionalLight(0xffffff, 2.2);
 key.position.set(1.4, 3, 2.2);
 key.castShadow = true;
@@ -704,6 +725,7 @@ function setAvatar(a) {
   $('#avatarName').textContent = a.name;
   $('#avatarCredit').textContent = a.credit ?? '';
   setView(currentView, true);
+  scheduleAccessories();
 }
 
 /* ---------------- Solver primitives ---------------- */
@@ -1467,9 +1489,11 @@ let recorder = null, recChunks = [], recStart = 0, recTimer = null;
 $('#recBtn').onclick = () => {
   if (recorder) { recorder.stop(); return; }
   if (!canvas.captureStream || typeof MediaRecorder === 'undefined') { toast('このブラウザは録画に対応していません', 'Chrome か Edge の最新版で試してください。'); return; }
-  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  const st = canvas.captureStream(30), audio = mic.stream?.getAudioTracks()[0];
+  if (audio) st.addTrack(audio); // "マイクで口パク" is on: record the voice too
+  const types = audio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
   const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
-  recorder = new MediaRecorder(canvas.captureStream(30), mimeType ? { mimeType, videoBitsPerSecond: 8e6 } : undefined);
+  recorder = new MediaRecorder(st, mimeType ? { mimeType, videoBitsPerSecond: 8e6 } : undefined);
   recChunks = [];
   recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
   recorder.onstop = () => {
@@ -1518,7 +1542,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1538,6 +1562,7 @@ function loadSettings() {
   if ($('#optBg').value === 'image') $('#optBg').value = 'studio'; // the image itself is not stored
   $('#micGainOut').textContent = $('#optMicGain').value;
   applyBackground();
+  applyLight();
   if ($('#optBridge').checked) setTimeout(connectBridge, 0);
   return saved.model ?? null;
 }
@@ -1659,11 +1684,20 @@ function micMouth(dt) {
 }
 
 let extraExpr = {};
+const autoBlink = { at: -1, next: 0 };
 function extrasBeforeUpdate(dt, now) {
   const a = 1 - Math.exp(-dt * 10);
   for (const k of PRESETS) presetW[k] += ((k === activePreset ? 1 : 0) - presetW[k]) * a;
   const m = micMouth(dt);
   const e = { ...exprState };
+  // no face in view: blink now and then, and look at the camera
+  const faceGone = !opts.face || now - seen.face > 1;
+  if (faceGone && $('#optAutoEyes').checked) {
+    if (now > autoBlink.next) { autoBlink.at = now; autoBlink.next = now + 2 + Math.random() * 3.5; }
+    const k = (now - autoBlink.at) / 0.16, b = k >= 0 && k < 1 ? Math.sin(k * Math.PI) : 0;
+    e.blinkLeft = Math.max(e.blinkLeft ?? 0, b); e.blinkRight = Math.max(e.blinkRight ?? 0, b);
+    avatar.vrm?.lookAt?.lookAt(camera.position);
+  }
   for (const k of PRESETS) e[k] = Math.max(e[k] ?? 0, presetW[k]);
   if (m) for (const k in m) e[k] = Math.max(e[k] ?? 0, Math.min(1, m[k]));
   extraExpr = e;
@@ -1710,7 +1744,7 @@ function spawnProp(kind) {
   scene.add(p.mesh); props.push(p);
 }
 function dropProp(p, v) { scene.attach(p.mesh); p.held = null; if (v) p.vel.copy(v); }
-function releaseAllProps() { for (const p of props) if (p.held) dropProp(p); }
+function releaseAllProps() { for (const p of props) if (p.held) dropProp(p); for (const s of SIDES) if (hands[s]) hands[s].holding = null; }
 document.querySelectorAll('#propBtns [data-prop]').forEach(b => b.onclick = () => spawnProp(b.dataset.prop));
 $('#propClear').onclick = () => {
   for (const p of props) { p.mesh.removeFromParent(); p.mesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); }
@@ -1732,7 +1766,10 @@ function updateHands(dt, now) {
       // grab the nearest free prop within reach (only on the moment the hand closes)
       let best = null, bd = Infinity;
       for (const p of props) { if (p.held) continue; const d = p.mesh.position.distanceTo(h.pos) - p.r; if (d < 0.09 && d < bd) { bd = d; best = p; } }
-      if (best) { best.held = s; h.holding = best; hb.attach(best.mesh); best.vel.set(0, 0, 0); best.spin.set(0, 0, 0); }
+      if (best) {
+        best.held = s; h.holding = best; hb.attach(best.mesh); best.vel.set(0, 0, 0); best.spin.set(0, 0, 0);
+        if (best.kind === 'mic' || best.kind === 'light') holdUpright(best.mesh, s);
+      }
     }
     h.wasClosed = closed;
   }
@@ -1780,6 +1817,111 @@ function stepProps(dt) {
   const hue = (performance.now() / 4000) % 1;
   for (const p of props) if (p.mesh.userData.glow) p.mesh.userData.glow.emissive.setHSL(hue, 1, 0.55);
 }
+
+/* sticks (mic, pen light) sit across the fist, sticking out on the thumb side */
+function holdUpright(mesh, s) {
+  const sx = s === 'left' ? 1 : -1;
+  const pos = new V3(0.05 * sx, -0.02, 0.01), q = new Q().setFromAxisAngle(new V3(1, 0, 0), Math.PI / 2); // prop +Y -> thumb side (+Z at rest)
+  if (isVRM0()) { pos.x *= -1; pos.z *= -1; q.premultiply(FLIP).multiply(FLIP); } // VRM 0.x bone frames are turned 180°
+  mesh.position.copy(pos); mesh.quaternion.copy(q);
+}
+
+/* ---- lighting presets ---- */
+const LIGHTS = {
+  studio: [0xd6defc, 0x2a2420, 1.1, 0xffffff, 2.2, 0x7cc4ff, 1.4],
+  bright: [0xffffff, 0x8a8a8a, 1.8, 0xffffff, 2.6, 0xffffff, 0.6],
+  sunset: [0xffc9a0, 0x402030, 0.9, 0xff9a5a, 2.4, 0x8a6cff, 1.6],
+  neon:   [0x6040a0, 0x101020, 0.7, 0xff4fd8, 1.8, 0x35e0ff, 2.6],
+  night:  [0x405080, 0x0a0a14, 0.6, 0x9fb4ff, 1.2, 0x4060ff, 1.2],
+};
+function applyLight() {
+  const [sky, ground, hi, kc, ki, rc, ri] = LIGHTS[$('#optLight').value] ?? LIGHTS.studio;
+  hemi.color.setHex(sky); hemi.groundColor.setHex(ground); hemi.intensity = hi;
+  key.color.setHex(kc); key.intensity = ki; rim.color.setHex(rc); rim.intensity = ri;
+}
+$('#optLight').onchange = applyLight;
+
+/* ---- head accessories ---- */
+let accGroup = null;
+function applyAccessories() {
+  accGroup?.removeFromParent(); accGroup?.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); accGroup = null;
+  const head = avatar?.bone('head'); if (!head) return;
+  const on = (id) => $('#' + id).checked;
+  if (!['accEars', 'accCrown', 'accGlasses', 'accHalo'].some(on)) return;
+  const g = new THREE.Group(), wrap = new THREE.Group(); wrap.add(g);
+  if (isVRM0()) wrap.rotation.y = Math.PI; // VRM 0.x bone frames are turned 180°
+  head.add(wrap); wrap.updateWorldMatrix(true, false);
+  // measure the actual head: size from the eye spacing, then shoot rays at the model (in the head's own frame:
+  // +Y up, +Z out of the face) for the top of the head and the face surface
+  const le = avatar.bone('leftEye'), re = avatar.bone('rightEye');
+  const eyeL = le && wrap.worldToLocal(le.getWorldPosition(new V3())), eyeR = re && wrap.worldToLocal(re.getWorldPosition(new V3()));
+  // glasses scale with the eye bones' spacing
+  const kE = eyeL && eyeR ? THREE.MathUtils.clamp(eyeL.distanceTo(eyeR) / 0.062, 0.6, 2) : 0.6;
+  const ray = new THREE.Raycaster(), meshes = [];
+  const skip = new Set(); for (const pr of props) pr.mesh.traverse(o => skip.add(o)); // a held prop is not part of the head
+  avatar.root.traverse(o => { if ((o.isMesh || o.isSkinnedMesh) && o.visible && !skip.has(o)) meshes.push(o); });
+  const hit = (from, dir) => {
+    ray.set(wrap.localToWorld(from.clone()), dir.clone().transformDirection(wrap.matrixWorld));
+    const h = ray.intersectObjects(meshes, false)[0];
+    return h ? wrap.worldToLocal(h.point.clone()) : null;
+  };
+  const eyeY = eyeL ? (eyeL.y + eyeR.y) / 2 : 0.07;
+  const topHit = hit(new V3(0, 1, 0), new V3(0, -1, 0));
+  const top = THREE.MathUtils.clamp(topHit ? topHit.y : eyeY + 0.15, eyeY + 0.06, eyeY + 0.4);
+  // the rest scale with the head: eye level to the top of the hair is about 15 cm on a typical model
+  const k = THREE.MathUtils.clamp((top - eyeY) / 0.15, 0.6, 1.8);
+  const faceHit = hit(new V3(0, eyeY, 1), new V3(0, 0, -1));
+  const faceZ = faceHit ? faceHit.z : 0.09 * k;
+  // hair surface straight below a point (capped, so a big ribbon or hat doesn't lift things into the air)
+  const cap = eyeY + 0.2 * k;
+  const surfaceAt = (x, z) => { const h = hit(new V3(x, 1, z), new V3(0, -1, 0)); return h ? Math.min(h.y, cap) : eyeY + 0.15 * k; };
+  const std = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, ...e });
+  if (on('accEars')) for (const sx of [1, -1]) {
+    const ear = new THREE.Group();
+    const outer = new THREE.Mesh(new THREE.ConeGeometry(0.045 * k, 0.09 * k, 4), std(0x3a3340));
+    const inner = new THREE.Mesh(new THREE.ConeGeometry(0.028 * k, 0.06 * k, 4), std(0xffb3c7));
+    inner.position.set(0, -0.008 * k, 0.012 * k);
+    ear.add(outer, inner); ear.position.set(sx * 0.06 * k, surfaceAt(sx * 0.06 * k, -0.01 * k) + 0.025 * k, -0.01 * k); ear.rotation.z = -sx * 0.38;
+    g.add(ear);
+  }
+  if (on('accCrown')) {
+    const gold = std(0xf4c542, { metalness: 0.85, roughness: 0.25 });
+    const crown = new THREE.Group();
+    crown.add(new THREE.Mesh(new THREE.CylinderGeometry(0.06 * k, 0.055 * k, 0.035 * k, 24, 1, true), gold));
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2, spike = new THREE.Mesh(new THREE.ConeGeometry(0.012 * k, 0.035 * k, 8), gold);
+      spike.position.set(Math.sin(a) * 0.058 * k, 0.034 * k, Math.cos(a) * 0.058 * k); crown.add(spike);
+      const gem = new THREE.Mesh(new THREE.SphereGeometry(0.006 * k, 8, 6), std(i % 2 ? 0xe0245e : 0x2f7cff, { roughness: 0.1 }));
+      gem.position.set(Math.sin(a) * 0.061 * k, 0, Math.cos(a) * 0.061 * k); crown.add(gem);
+    }
+    crown.position.set(0, surfaceAt(0, -0.01 * k) - 0.004 * k, -0.01 * k); crown.rotation.x = -0.12; g.add(crown);
+  }
+  if (on('accGlasses')) {
+    const frame = std(0x1b1d24, { metalness: 0.4, roughness: 0.3 });
+    const glasses = new THREE.Group();
+    for (const sx of [1, -1]) {
+      const ringM = new THREE.Mesh(new THREE.TorusGeometry(0.022 * kE, 0.003 * kE, 8, 32), frame);
+      ringM.position.x = sx * 0.032 * kE; glasses.add(ringM);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.021 * kE, 24), new THREE.MeshStandardMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.18, roughness: 0.05 }));
+      lens.position.x = sx * 0.032 * kE; glasses.add(lens);
+      const temple = new THREE.Mesh(new THREE.BoxGeometry(0.003 * kE, 0.003 * kE, 0.07 * kE), frame);
+      temple.position.set(sx * 0.055 * kE, 0, -0.035 * kE); glasses.add(temple);
+    }
+    const bridge_ = new THREE.Mesh(new THREE.BoxGeometry(0.02 * kE, 0.003 * kE, 0.003 * kE), frame);
+    glasses.add(bridge_);
+    glasses.position.set(0, eyeY, faceZ + 0.012 * kE); g.add(glasses);
+  }
+  if (on('accHalo')) {
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.07 * k, 0.007 * k, 12, 48), new THREE.MeshStandardMaterial({ color: 0xfff4b0, emissive: 0xffe066, emissiveIntensity: 1.8 }));
+    halo.rotation.x = Math.PI / 2 - 0.15; halo.position.set(0, top + 0.05 * k, -0.02 * k); g.add(halo);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  accGroup = wrap;
+}
+// right after a model loads its skinning matrices are not computed yet: measure after two drawn frames
+const scheduleAccessories = () => requestAnimationFrame(() => requestAnimationFrame(applyAccessories));
+['accEars', 'accCrown', 'accGlasses', 'accHalo'].forEach(id => { $('#' + id).onchange = applyAccessories; });
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
