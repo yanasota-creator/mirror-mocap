@@ -420,7 +420,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" id="propClear">全部消す</button>
         </div>
         <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
-        <p class="hint">手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。</p>
+        <p class="hint">手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。マウスや指でドラッグしても動かせます（離すと投げられます）。</p>
       </section>
 
       <section class="sec">
@@ -1876,7 +1876,7 @@ function updateHands(dt, now) {
 function stepProps(dt) {
   const gravity = $('#optGravity').checked;
   for (const p of props) {
-    if (p.held) continue;
+    if (p.held || p === drag.p) continue;
     const m = p.mesh;
     if (gravity) p.vel.y -= 9.8 * dt;
     else p.vel.multiplyScalar(Math.exp(-dt * 1.6));
@@ -2405,6 +2405,42 @@ $('#pipBtn').onclick = async () => {
     $('#pipBtn').textContent = 'デスクトップに浮かべる（小窓）'; resize(); fitBackground();
   });
 };
+
+
+/* ---- drag props with the mouse / a finger (for when your hands can't reach) ---- */
+const drag = { p: null, plane: new THREE.Plane(), off: new V3(), ray: new THREE.Raycaster(), last: new V3(), lastT: 0, vel: new V3(), gap: 16 };
+const ndc = (e) => { const r = canvas.getBoundingClientRect(); return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); };
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !props.length) return;
+  drag.ray.setFromCamera(ndc(e), camera);
+  const free = props.filter(p => !p.held), hits = drag.ray.intersectObjects(free.map(p => p.mesh), true);
+  if (!hits.length) return;
+  const p = free.find(q => { let o = hits[0].object; while (o) { if (o === q.mesh) return true; o = o.parent; } return false; });
+  if (!p) return;
+  drag.p = p; controls.enabled = false; canvas.setPointerCapture(e.pointerId);
+  drag.plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3()).negate(), p.mesh.position);
+  const hit = drag.ray.ray.intersectPlane(drag.plane, new V3());
+  drag.off.copy(p.mesh.position).sub(hit ?? p.mesh.position);
+  drag.last.copy(p.mesh.position); drag.lastT = e.timeStamp; drag.vel.set(0, 0, 0); drag.gap = 16; // input times, not handler times (a busy page runs handlers late)
+  e.preventDefault();
+}, { capture: true });
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag.p) return;
+  drag.ray.setFromCamera(ndc(e), camera);
+  const hit = drag.ray.ray.intersectPlane(drag.plane, new V3()); if (!hit) return;
+  const now = e.timeStamp, m = drag.p.mesh;
+  m.position.copy(hit.add(drag.off)); drag.p.vel.set(0, 0, 0);
+  const dt = Math.max(1, now - drag.lastT) / 1000;
+  drag.gap += (Math.min(500, now - drag.lastT) - drag.gap) * 0.3; // usual time between move events (long on a busy page)
+  drag.vel.lerp(m.position.clone().sub(drag.last).divideScalar(dt), 0.5); drag.last.copy(m.position); drag.lastT = now;
+});
+const endDrag = (e) => {
+  if (!drag.p) return;
+  // let go while moving = throw; after holding still for a moment = just put it down
+  drag.p.vel.copy(e.timeStamp - drag.lastT < Math.max(100, drag.gap * 2) ? drag.vel : new V3()).clampLength(0, 6);
+  drag.p = null; controls.enabled = true;
+};
+canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
