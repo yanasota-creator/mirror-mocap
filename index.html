@@ -154,6 +154,12 @@ body.stream .main { grid-template-columns: 1fr; }
 .status { font-size: 12px; color: var(--muted); margin: 0; }
 .status.ok { color: var(--ok); }
 .status.bad { color: var(--warn); }
+/* collapsible panel sections */
+.sec h2 { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; border-radius: 4px; }
+.sec h2::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s; margin-right: 4px; }
+.sec.closed h2::after { transform: rotate(-45deg); }
+.sec.closed > :not(h2) { display: none !important; }
+.sec h2:hover { color: var(--fg); }
 .stream-exit { position: absolute; top: 12px; right: 12px; z-index: 5; opacity: 0; transition: opacity .3s; }
 .stream-exit.show { opacity: 1; }
 
@@ -182,6 +188,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   .pip.mini { width: 48px; }
   .pip figcaption { font-size: 10px; top: 4px; left: 4px; }
 }
+body.stream .app { height: 100%; min-height: 0; }
+body.stream .stage { height: 100%; min-height: 0; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -1921,6 +1929,24 @@ function applyAccessories() {
 // right after a model loads its skinning matrices are not computed yet: measure after two drawn frames
 const scheduleAccessories = () => requestAnimationFrame(() => requestAnimationFrame(applyAccessories));
 ['accEars', 'accCrown', 'accGlasses', 'accHalo'].forEach(id => { $('#' + id).onchange = applyAccessories; });
+
+
+/* ---- collapsible panel sections (remembered in this browser) ---- */
+const CLOSED_KEY = 'mirror-mocap-closed', CLOSED_DEFAULT = ['アクセサリー', '外部連携', '精度を上げるコツ'];
+let closedSecs; try { closedSecs = JSON.parse(localStorage.getItem(CLOSED_KEY)); } catch {}
+closedSecs = Array.isArray(closedSecs) ? closedSecs : CLOSED_DEFAULT;
+document.querySelectorAll('.panel .sec > h2').forEach(h => {
+  const sec = h.parentElement, name = h.textContent.trim();
+  const set = (closed) => { sec.classList.toggle('closed', closed); h.setAttribute('aria-expanded', String(!closed)); };
+  h.tabIndex = 0; h.setAttribute('role', 'button'); set(closedSecs.includes(name));
+  const toggle = () => {
+    set(!sec.classList.contains('closed'));
+    closedSecs = [...document.querySelectorAll('.panel .sec.closed > h2')].map(x => x.textContent.trim());
+    try { localStorage.setItem(CLOSED_KEY, JSON.stringify(closedSecs)); } catch {}
+  };
+  h.onclick = toggle;
+  h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+});
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
