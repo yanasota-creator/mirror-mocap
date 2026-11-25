@@ -381,7 +381,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <div class="grid3" id="customExpr"></div>
         </div>
         <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
-        <label class="toggle"><span>エフェクト<small>笑顔でハート、驚きで「！」、怒りで怒りマーク、悲しみで涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
+        <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
         <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
         <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
         <div class="slider">
@@ -2071,7 +2071,9 @@ function stepFx(dt, now) {
   if (!$('#optFx').checked || !avatar?.bone('head')) return;
   if (fxState.avatar !== avatar) { const w = headFrame(); fxState.head = measureHead(w); w.removeFromParent(); fxState.avatar = avatar; }
   const { eyeY, top, faceZ } = fxState.head;
-  const e = extraExpr, on = (k) => (e[k] ?? 0) > 0.6, rnd = (a) => (Math.random() - 0.5) * a;
+  // only when you ask for it (expression buttons / keys, peace sign), not every time the camera sees a smile
+  const asked = (k) => Math.max(presetW[k] ?? 0, k === 'happy' ? gestureW : 0);
+  const on = (k) => asked(k) > 0.6, rnd = (a) => (Math.random() - 0.5) * a;
   if (on('happy') && now > fxState.next) {
     fxState.next = now + 0.35;
     const sx = Math.random() < 0.5 ? -1 : 1;
