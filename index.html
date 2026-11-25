@@ -306,6 +306,8 @@ body.stream .stage { height: 100%; min-height: 0; }
         <p class="hint">停止すると .webm ファイルとして保存されます。「マイクで口パク」がオンなら声も入ります。</p>
         <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）</button>
         <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録（BVH）</span></button>
+        <label class="btn file" id="bvhPlayLabel">モーションを再生（BVH）<input type="file" id="bvhFile" accept=".bvh"></label>
+        <button type="button" class="btn" id="bvhStop" hidden>再生を止める</button>
         <p class="hint">BVH は動きだけのデータです。Blender・MMD（変換ツール経由）・Unity などに読み込めます。</p>
       </section>
 
@@ -340,6 +342,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <option value="neon">ネオン</option>
           <option value="night">夜</option>
         </select>
+        <label class="toggle"><span>カメラをゆっくり動かす<small>配信画面に少し動きを付けます</small></span><input type="checkbox" id="optSway"></label>
         <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）</button>
         <p class="hint">OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
       </section>
@@ -354,6 +357,8 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
         </div>
         <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
+        <label class="toggle"><span>エフェクト<small>笑顔でハート、驚きで「！」、怒りで怒りマーク、悲しみで涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
         <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
         <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
         <div class="slider">
@@ -699,6 +704,7 @@ function basisQuat(x, yApprox, out = new Q()) {
 }
 function setAvatar(a) {
   releaseAllProps(); // props held in a hand would be disposed with the old avatar
+  if (typeof play !== 'undefined' && play.clip) stopPlayback();
   if (avatar) { scene.remove(avatar.root); avatar.dispose?.(); }
   avatar = a;
   scene.add(a.root);
@@ -860,6 +866,9 @@ function solveHand(s, world, t, alpha) {
   for (const [mcp, tip] of [[5, 8], [9, 12], [13, 16], [17, 20]]) r += H[tip].distanceTo(H[0]) / Math.max(1e-6, H[mcp].distanceTo(H[0]));
   grip[s] = THREE.MathUtils.clamp((1.7 - r / 4) / 0.55, 0, 1);
   grip[s + 'At'] = t;
+  // peace sign: index and middle straight, ring and little curled
+  const ext = (mcp, tip) => H[tip].distanceTo(H[0]) / Math.max(1e-6, H[mcp].distanceTo(H[0]));
+  if (ext(5, 8) > 1.6 && ext(9, 12) > 1.6 && ext(13, 16) < 1.3 && ext(17, 20) < 1.3) grip.peaceAt = t;
 }
 
 /* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
@@ -1473,7 +1482,9 @@ function tick() {
     if (k >= 1) viewTween = null;
   }
   controls.update();
+  beforeRender(now);
   renderer.render(scene, camera);
+  afterRender();
   const ms = performance.now() - statT;
   if (ms > 1000) {
     const rate = (p) => { const c = partStat[p].count ?? 0; partStat[p].count = 0; return Math.round(c * 1000 / ms); };
@@ -1550,7 +1561,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1587,7 +1598,7 @@ document.querySelector('.panel').addEventListener('change', saveSettings);
 /* ================================================================
    Extras: background, streaming mode, screenshot, expressions, mic lip sync, grabbable props
    ================================================================ */
-const grip = { left: 0, right: 0, leftAt: -1e9, rightAt: -1e9 };
+const grip = { left: 0, right: 0, leftAt: -1e9, rightAt: -1e9, peaceAt: -1e9 };
 
 /* ---- background ---- */
 const STUDIO_BG = 0x171a23, studioFog = scene.fog;
@@ -1691,11 +1702,12 @@ function micMouth(dt) {
   return { aa: L * (1 - Math.abs(c - 0.5)), ih: L * Math.max(0, c - 0.6) * 1.6, ou: L * Math.max(0, 0.4 - c) * 1.6, ee: L * Math.max(0, c - 0.45) * 0.8, oh: L * Math.max(0, 0.55 - c) * 0.9 };
 }
 
-let extraExpr = {};
+let extraExpr = {}, gestureW = 0;
 const autoBlink = { at: -1, next: 0 };
 function extrasBeforeUpdate(dt, now) {
   const a = 1 - Math.exp(-dt * 10);
   for (const k of PRESETS) presetW[k] += ((k === activePreset ? 1 : 0) - presetW[k]) * a;
+  gestureW += ((($('#optGesture').checked && now - grip.peaceAt < 0.5) ? 1 : 0) - gestureW) * a;
   const m = micMouth(dt);
   const e = { ...exprState };
   // no face in view: blink now and then, and look at the camera
@@ -1707,9 +1719,11 @@ function extrasBeforeUpdate(dt, now) {
     avatar.vrm?.lookAt?.lookAt(camera.position);
   }
   for (const k of PRESETS) e[k] = Math.max(e[k] ?? 0, presetW[k]);
+  e.happy = Math.max(e.happy ?? 0, gestureW);
   if (m) for (const k in m) e[k] = Math.max(e[k] ?? 0, Math.min(1, m[k]));
   extraExpr = e;
   avatar.expr(e);
+  applyPlayback(dt);
 }
 
 /* ---- grabbable props ---- */
@@ -1849,16 +1863,12 @@ function applyLight() {
 }
 $('#optLight').onchange = applyLight;
 
-/* ---- head accessories ---- */
-let accGroup = null;
-function applyAccessories() {
-  accGroup?.removeFromParent(); accGroup?.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); accGroup = null;
-  const head = avatar?.bone('head'); if (!head) return;
-  const on = (id) => $('#' + id).checked;
-  if (!['accEars', 'accCrown', 'accGlasses', 'accHalo'].some(on)) return;
-  const g = new THREE.Group(), wrap = new THREE.Group(); wrap.add(g);
-  if (isVRM0()) wrap.rotation.y = Math.PI; // VRM 0.x bone frames are turned 180°
-  head.add(wrap); wrap.updateWorldMatrix(true, false);
+/* measure the actual head in its own frame (+Y up, +Z out of the face): eye level, top of the hair, face surface */
+function headFrame() {
+  const w = new THREE.Group(); if (isVRM0()) w.rotation.y = Math.PI; // VRM 0.x bone frames are turned 180°
+  avatar.bone('head').add(w); w.updateWorldMatrix(true, false); return w;
+}
+function measureHead(wrap) {
   // measure the actual head: size from the eye spacing, then shoot rays at the model (in the head's own frame:
   // +Y up, +Z out of the face) for the top of the head and the face surface
   const le = avatar.bone('leftEye'), re = avatar.bone('rightEye');
@@ -1883,6 +1893,18 @@ function applyAccessories() {
   // hair surface straight below a point (capped, so a big ribbon or hat doesn't lift things into the air)
   const cap = eyeY + 0.2 * k;
   const surfaceAt = (x, z) => { const h = hit(new V3(x, 1, z), new V3(0, -1, 0)); return h ? Math.min(h.y, cap) : eyeY + 0.15 * k; };
+  return { kE, k, eyeY, top, faceZ, surfaceAt };
+}
+
+/* ---- head accessories ---- */
+let accGroup = null;
+function applyAccessories() {
+  accGroup?.removeFromParent(); accGroup?.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); accGroup = null;
+  const head = avatar?.bone('head'); if (!head) return;
+  const on = (id) => $('#' + id).checked;
+  if (!['accEars', 'accCrown', 'accGlasses', 'accHalo'].some(on)) return;
+  const wrap = headFrame(), g = new THREE.Group(); wrap.add(g);
+  const { kE, k, eyeY, top, faceZ, surfaceAt } = measureHead(wrap);
   const std = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, ...e });
   if (on('accEars')) for (const sx of [1, -1]) {
     const ear = new THREE.Group();
@@ -1947,6 +1969,134 @@ document.querySelectorAll('.panel .sec > h2').forEach(h => {
   h.onclick = toggle;
   h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
 });
+
+
+/* ---- expression effects (hearts, "!", anger mark, tears) ---- */
+function fxTexture(kind) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.lineJoin = g.lineCap = 'round';
+  if (kind === 'heart') {
+    g.fillStyle = '#ff5c8a'; g.strokeStyle = '#fff'; g.lineWidth = 8;
+    g.beginPath(); g.moveTo(64, 110); g.bezierCurveTo(-10, 60, 20, 0, 64, 36); g.bezierCurveTo(108, 0, 138, 60, 64, 110); g.fill(); g.stroke();
+  } else if (kind === 'bang') {
+    // drawn as shapes (a font's "!" is too thin and depends on the system)
+    const bar = () => { g.beginPath(); g.moveTo(48, 10); g.lineTo(80, 10); g.lineTo(72, 84); g.lineTo(56, 84); g.closePath(); };
+    const dot = () => { g.beginPath(); g.arc(64, 106, 13, 0, Math.PI * 2); };
+    g.lineWidth = 12; g.strokeStyle = '#fff'; bar(); g.stroke(); dot(); g.stroke();
+    g.fillStyle = '#ff9f1c'; bar(); g.fill(); dot(); g.fill();
+  } else if (kind === 'anger') {
+    g.strokeStyle = '#e8343a'; g.lineWidth = 14;
+    for (let i = 0; i < 4; i++) { g.save(); g.translate(64, 64); g.rotate(i * Math.PI / 2); g.beginPath(); g.moveTo(14, 46); g.quadraticCurveTo(14, 14, 46, 14); g.stroke(); g.restore(); }
+  } else if (kind === 'tear') {
+    g.fillStyle = '#5fb8ff'; g.strokeStyle = '#fff'; g.lineWidth = 7;
+    g.beginPath(); g.moveTo(64, 12); g.bezierCurveTo(64, 40, 30, 62, 30, 84); g.arc(64, 84, 34, Math.PI, 0, true); g.bezierCurveTo(98, 62, 64, 40, 64, 12); g.fill(); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const fxTex = {}, fxList = [], fxState = { next: 0, was: {} };
+function spawnFx(kind, offset, vel, life, size) {
+  fxTex[kind] ??= fxTexture(kind);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTex[kind], transparent: true, depthWrite: false }));
+  const head = avatar.bone('head'); if (!head) return;
+  head.getWorldPosition(sp.position); sp.position.add(offset);
+  sp.scale.setScalar(size); scene.add(sp);
+  fxList.push({ sp, vel, life, age: 0, size });
+}
+function stepFx(dt, now) {
+  for (let i = fxList.length - 1; i >= 0; i--) {
+    const f = fxList[i]; f.age += dt;
+    f.sp.position.addScaledVector(f.vel, dt);
+    const k = f.age / f.life;
+    f.sp.material.opacity = k < 0.15 ? k / 0.15 : 1 - Math.max(0, (k - 0.6) / 0.4);
+    f.sp.scale.setScalar(f.size * (k < 0.15 ? 0.6 + k / 0.15 * 0.4 : 1));
+    if (k >= 1) { f.sp.removeFromParent(); f.sp.material.dispose(); fxList.splice(i, 1); }
+  }
+  if (!$('#optFx').checked || !avatar?.bone('head')) return;
+  if (fxState.avatar !== avatar) { const w = headFrame(); fxState.head = measureHead(w); w.removeFromParent(); fxState.avatar = avatar; }
+  const { eyeY, top, faceZ } = fxState.head;
+  const e = extraExpr, on = (k) => (e[k] ?? 0) > 0.6, rnd = (a) => (Math.random() - 0.5) * a;
+  if (on('happy') && now > fxState.next) {
+    fxState.next = now + 0.35;
+    const sx = Math.random() < 0.5 ? -1 : 1;
+    spawnFx('heart', new V3(sx * (0.12 + Math.random() * 0.12), eyeY + rnd(0.12), 0.04), new V3(sx * 0.03, 0.16, 0), 1.6, 0.045 + Math.random() * 0.03);
+  }
+  // one-shot marks when the expression starts
+  for (const [k, kind, off, vel, life, size] of [['surprised', 'bang', new V3(0.12, top + 0.02, 0.03), new V3(0, 0.05, 0), 1.2, 0.09],
+    ['angry', 'anger', new V3(0.1, top - 0.03, 0.05), new V3(0, 0, 0), 1.4, 0.07],
+    ['sad', 'tear', new V3(-0.06, eyeY - 0.01, faceZ + 0.01), new V3(0, -0.06, 0), 1.6, 0.04]]) {
+    if (on(k) && !fxState.was[k]) spawnFx(kind, off, vel, life, size);
+    fxState.was[k] = on(k);
+  }
+}
+
+/* ---- gentle camera sway (applied only while drawing, so the orbit controls keep their own position) ---- */
+const swayKeep = new V3(); let swaying = false;
+function beforeRender(now) {
+  swaying = $('#optSway').checked && !viewTween;
+  if (!swaying) return;
+  swayKeep.copy(camera.position);
+  const d = camera.position.distanceTo(controls.target);
+  camera.position.add(new V3(Math.sin(now * 0.23) * 0.09 * d, Math.sin(now * 0.31 + 1) * 0.03 * d, Math.sin(now * 0.17 + 2) * 0.05 * d));
+  camera.lookAt(controls.target);
+}
+function afterRender() {
+  if (!swaying) return;
+  camera.position.copy(swayKeep); camera.lookAt(controls.target);
+}
+
+/* ---- BVH playback (files recorded by this page; joints named after VRM bones) ---- */
+const play = { clip: null, t: 0, hipsRest: null };
+function parseBVH(text) {
+  const tok = text.split(/\s+/).filter(Boolean);
+  let i = 0; const joints = [], stack = [];
+  if (tok[i++] !== 'HIERARCHY') throw new Error('not-bvh');
+  while (i < tok.length && tok[i] !== 'MOTION') {
+    const w = tok[i++];
+    if (w === 'ROOT' || w === 'JOINT') { const j = { name: tok[i++], channels: [] }; joints.push(j); stack.push(j); }
+    else if (w === 'End') { i++; stack.push(null); }
+    else if (w === 'CHANNELS') { const n = +tok[i++]; const ch = tok.slice(i, i + n); i += n; stack.at(-1).channels = ch; }
+    else if (w === '}') stack.pop();
+    else if (w === 'OFFSET') i += 3;
+  }
+  i++; // MOTION
+  const nFrames = +tok[i + 1]; i += 2;
+  const dt = +tok[i + 2]; i += 3;
+  const width = joints.reduce((a, j) => a + j.channels.length, 0), data = tok.slice(i).map(Number);
+  if (!nFrames || data.length < nFrames * width) throw new Error('short');
+  return { joints, nFrames, dt, width, data };
+}
+$('#bvhFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const clip = parseBVH(await f.text());
+    const known = clip.joints.filter(j => HUMAN_BONES.includes(j.name)).length;
+    if (known < 10) { toast('このBVHは再生できません', 'このページで記録したBVH（骨の名前がVRMと同じもの）だけ再生できます。'); return; }
+    play.clip = clip; play.t = 0; play.hipsRest = avatar.bone('hips')?.position.clone() ?? null;
+    $('#bvhStop').hidden = false;
+  } catch { toast('BVHを読み込めませんでした', 'ファイルが壊れているか、BVH形式ではありません。'); }
+};
+function stopPlayback() {
+  play.clip = null; $('#bvhStop').hidden = true;
+  if (play.hipsRest) avatar.bone('hips')?.position.copy(play.hipsRest);
+}
+$('#bvhStop').onclick = stopPlayback;
+const _pe = new THREE.Euler(), _pq = new Q();
+function applyPlayback(dt) {
+  const c = play.clip; if (!c || !avatar) return;
+  play.t = (play.t + dt) % (c.nFrames * c.dt);
+  const row = Math.min(c.nFrames - 1, Math.floor(play.t / c.dt)) * c.width, flip = isVRM0(), D = Math.PI / 180;
+  let k = row;
+  for (const j of c.joints) {
+    const v = {}; for (const ch of j.channels) v[ch] = c.data[k++];
+    const b = HUMAN_BONES.includes(j.name) ? avatar.bone(j.name) : null; if (!b) continue;
+    const order = j.channels.filter(ch => ch.endsWith('rotation')).map(ch => ch[0]).join('');
+    _pe.set((v.Xrotation ?? 0) * D, (v.Yrotation ?? 0) * D, (v.Zrotation ?? 0) * D, order.length === 3 ? order : 'ZXY');
+    _pq.setFromEuler(_pe);
+    if (flip) { _pq.x = -_pq.x; _pq.z = -_pq.z; }
+    b.quaternion.copy(_pq);
+    if ('Xposition' in v && j.name === 'hips') b.position.set((flip ? -1 : 1) * v.Xposition / 100, v.Yposition / 100, (flip ? -1 : 1) * v.Zposition / 100);
+  }
+}
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
@@ -2096,6 +2246,7 @@ function bvhCapture(now) {
 }
 
 function extrasAfterUpdate(dt, now) {
+  stepFx(dt, now);
   updateHands(dt, now);
   stepProps(dt);
   bridgeFrame(now);
@@ -2112,7 +2263,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, exportPose, exportTrackers, bvhText, parseBVH, play, grip,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
