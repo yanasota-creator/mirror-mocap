@@ -24,6 +24,7 @@ class MocapPacket
     public float[] face;  // 4 x (x,y,z): right eye outer, left eye outer, forehead, chin (pixel-ish units)
     public float[] bs;    // blinkL, blinkR, jawOpen, pucker, funnel, smile, lookLeft, lookUp
     public int[] occ;     // hand over face, hand near mouth, hand near eyes
+    public float[] sh;    // shoulder centre x, y and shoulder width in image pixels (for moving the whole body)
 }
 
 [DefaultExecutionOrder(-50)] // pose bones before UniVRM runs spring bones / expressions in LateUpdate
@@ -38,6 +39,7 @@ public class MirrorMocapReceiver : MonoBehaviour
     [Range(0, 1), Tooltip("上げるとブレが減り、少し遅れる")] public float smoothing = 0.45f;
     [Range(0, 1), Tooltip("上げると動きが行き過ぎて戻る（ぷるぷる）")] public float jiggle = 0.55f;
     [Tooltip("目の向き（視線）を動かす")] public bool trackGaze = true;
+    [Tooltip("左右に動く・しゃがむとアバターも移動する（正面リセットの位置が基準）")] public bool moveBody = false;
 
     [Header("Scene")]
     [Tooltip("再生開始時にメインカメラをアバターの正面に置く")] public bool placeCamera = true;
@@ -61,6 +63,11 @@ public class MirrorMocapReceiver : MonoBehaviour
     float seenPose = -99, seenFace = -99, faceHeld = -99, seenHandL = -99, seenHandR = -99;
     readonly float[] expr = new float[6]; // blinkL, blinkR, aa, ou, oh, happy (avatar sides)
     float gazeYaw, gazePitch; // degrees, UniVRM convention: +yaw = avatar's right, +pitch = up
+    // expression presets on keys 1-5 (happy, angry, sad, surprised, relaxed), 0 = off
+    int activePreset = -1;
+    readonly float[] presetW = new float[5];
+    // body position from the shoulders' place in the image
+    Vector3 shoulderRaw, shoulderRef, bodyOff; bool hasShoulderRef; float seenShoulder = -99;
 
     UdpClient udp;
     Thread thread;
@@ -203,7 +210,10 @@ public class MirrorMocapReceiver : MonoBehaviour
     {
         if (haveTorso) { calibTorso = lastTorso; calibHips = lastHips; }
         if (haveHead) calibHead = lastHead;
+        hasShoulderRef = false; // the body position is measured from here
     }
+
+    public void SetPreset(int i) { activePreset = i == activePreset ? -1 : i; }
 
     [ContextMenu("ミラー切り替え")]
     public void ToggleMirror() { mirror = !mirror; calibTorso = calibHips = calibHead = null; }
@@ -214,9 +224,20 @@ public class MirrorMocapReceiver : MonoBehaviour
         var kb = Keyboard.current; // Unity 6's new input system
         if (kb != null && kb.cKey.wasPressedThisFrame) Calibrate();
         if (kb != null && kb.mKey.wasPressedThisFrame) ToggleMirror();
+        if (kb != null)
+        {
+            if (kb.digit1Key.wasPressedThisFrame) SetPreset(0);
+            if (kb.digit2Key.wasPressedThisFrame) SetPreset(1);
+            if (kb.digit3Key.wasPressedThisFrame) SetPreset(2);
+            if (kb.digit4Key.wasPressedThisFrame) SetPreset(3);
+            if (kb.digit5Key.wasPressedThisFrame) SetPreset(4);
+            if (kb.digit0Key.wasPressedThisFrame) activePreset = -1;
+        }
 #elif ENABLE_LEGACY_INPUT_MANAGER
         if (Input.GetKeyDown(KeyCode.C)) Calibrate();
         if (Input.GetKeyDown(KeyCode.M)) ToggleMirror();
+        for (int i = 0; i < 5; i++) if (Input.GetKeyDown(KeyCode.Alpha1 + i)) SetPreset(i);
+        if (Input.GetKeyDown(KeyCode.Alpha0)) activePreset = -1;
 #endif
         var json = latestJson;
         if (json != null)
@@ -232,6 +253,8 @@ public class MirrorMocapReceiver : MonoBehaviour
         float w0 = 12f + 34f * (1f - smoothing), zeta = 1f - 0.72f * jiggle;
         foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones))) // parents come before children in this enum
             if (bones.TryGetValue(b, out var s) && s.hasTarget) Spring(s, dt, w0, zeta);
+        MoveBody(dt);
+        for (int i = 0; i < 5; i++) presetW[i] += ((i == activePreset ? 1f : 0f) - presetW[i]) * (1f - Mathf.Exp(-dt * 10f));
 
         if (vrm != null && vrm.Runtime != null)
         {
@@ -241,7 +264,11 @@ public class MirrorMocapReceiver : MonoBehaviour
             e.SetWeight(ExpressionKey.Aa, expr[2]);
             e.SetWeight(ExpressionKey.Ou, expr[3]);
             e.SetWeight(ExpressionKey.Oh, expr[4]);
-            e.SetWeight(ExpressionKey.Happy, expr[5]);
+            e.SetWeight(ExpressionKey.Happy, Mathf.Max(expr[5], presetW[0]));
+            e.SetWeight(ExpressionKey.Angry, presetW[1]);
+            e.SetWeight(ExpressionKey.Sad, presetW[2]);
+            e.SetWeight(ExpressionKey.Surprised, presetW[3]);
+            e.SetWeight(ExpressionKey.Relaxed, presetW[4]);
             vrm.Runtime.LookAt.SetYawPitchManually(trackGaze ? gazeYaw : 0f, trackGaze ? gazePitch : 0f);
         }
     }
@@ -349,6 +376,8 @@ public class MirrorMocapReceiver : MonoBehaviour
             }
         }
 
+        if (p.sh != null && p.sh.Length >= 3) { shoulderRaw = new Vector3(p.sh[0], p.sh[1], p.sh[2]); seenShoulder = now; }
+
         if (p.face != null && p.face.Length >= 12)
         {
             seenFace = now;
@@ -401,6 +430,25 @@ public class MirrorMocapReceiver : MonoBehaviour
         }
     }
     int jumpRejects;
+
+    // shoulder centre moved in the image -> move the hips (meters, scaled by the shoulder width)
+    void MoveBody(float dt)
+    {
+        if (!bones.TryGetValue(HumanBodyBones.Hips, out var hips)) return;
+        bool fresh = moveBody && Time.time - seenShoulder < 0.7f && shoulderRaw.z > 1f;
+        Vector3 target = Vector3.zero;
+        if (fresh)
+        {
+            if (!hasShoulderRef) { shoulderRef = shoulderRaw; hasShoulderRef = true; }
+            float avatarShoulder = (P(HumanBodyBones.RightUpperArm) - P(HumanBodyBones.LeftUpperArm)).magnitude;
+            float k = (avatarShoulder > 0.01f ? avatarShoulder : 0.3f) / shoulderRaw.z;
+            // image x grows toward the subject's left; canonical +X is the avatar's right
+            float x = (mirror ? 1f : -1f) * (shoulderRaw.x - shoulderRef.x) * k, y = -(shoulderRaw.y - shoulderRef.y) * k;
+            target = new Vector3(Mathf.Clamp(x, -0.8f, 0.8f), Mathf.Clamp(y, -0.6f, 0.25f), 0f);
+        }
+        bodyOff = Vector3.Lerp(bodyOff, target, 1f - Mathf.Exp(-dt * (fresh ? 8f : 2f)));
+        hips.t.position = hips.restPos + R0 * bodyOff;
+    }
 
     void Idle()
     {

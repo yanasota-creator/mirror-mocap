@@ -78,6 +78,9 @@ def build_packet(latest: Latest, w: int, h: int) -> dict:
         pkt["pose"] = [r4(c) for l in world for c in (l.x, l.y, l.z)]
         pkt["vis"] = [round(float(l.visibility or 0.0), 3) for l in norm]
         pimg = norm
+        ls, rs = norm[11], norm[12]
+        if (ls.visibility or 0) > 0.5 and (rs.visibility or 0) > 0.5:  # shoulder centre + width in pixels (moving the whole body)
+            pkt["sh"] = [round((ls.x + rs.x) / 2 * w, 1), round((ls.y + rs.y) / 2 * h, 1), round(math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h), 1)]
 
     # hands: assign to the subject's left / right with the body AI's wrists (more reliable than the label)
     hand_pts = []
