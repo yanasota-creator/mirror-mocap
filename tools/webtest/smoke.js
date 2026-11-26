@@ -1,15 +1,31 @@
 // Smoke test for the web version: opens index.html in headless Chromium and checks the main features.
 //   cd tools/webtest && npm install            (once: three / three-vrm / mediapipe copies for offline CDN routing)
-//   (cd ../.. && python3 -m http.server 8765)  (serve the repository root in another terminal)
 //   node smoke.js [photo.y4m]                  (optional: a fake camera video; then tracking is checked too)
+// The repository root is served by a small web server started here (no separate terminal needed).
 // The CDN (jsDelivr) is answered from node_modules, so this works where jsDelivr is blocked.
 // No GPU here means ~3-5 frames per second: every check waits for its result instead of sleeping a fixed time.
 const { chromium } = require('playwright');
 const path = require('path'), fs = require('fs');
 const NM = path.join(__dirname, 'node_modules');
 const cam = process.argv[2];
+const http = require('http');
+const ROOT = path.resolve(__dirname, '..', '..');
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.vrm': 'model/gltf-binary' };
+// a tiny static server for the repository root (only files inside it)
+function serve() {
+  return new Promise((resolve) => {
+    const srv = http.createServer((req, res) => {
+      const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') || 'index.html';
+      const f = path.resolve(ROOT, rel);
+      if (!f.startsWith(ROOT + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'content-type': TYPES[path.extname(f)] ?? 'application/octet-stream' }); fs.createReadStream(f).pipe(res);
+    });
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+}
 
 (async () => {
+  const srv = await serve(), BASE = `http://localhost:${srv.address().port}/`;
   const args = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'];
   if (cam) args.push(`--use-file-for-fake-video-capture=${path.resolve(cam)}`);
   const browser = await chromium.launch({ args });
@@ -36,7 +52,7 @@ const cam = process.argv[2];
   const ev = (f, a) => page.evaluate(f, a);
   const until = async (f, ms = 20000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await ev(f)) return true; await page.waitForTimeout(250); } return false; };
 
-  await page.goto('http://localhost:8765/');
+  await page.goto(BASE);
   await check('VRMモデルが読み込まれる', () => until(() => !!window.__mocap.avatar?.vrm, 120000));
   await ev(() => { document.getElementById('intro').hidden = true; document.querySelectorAll('.sec.closed').forEach(x => x.classList.remove('closed')); });
   await page.mouse.click(30, 700); // focus the 3D view so keys reach the page

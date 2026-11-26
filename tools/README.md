@@ -4,20 +4,25 @@
 
 | 道具 | 中身 | 使い方 |
 |---|---|---|
-| `build.py` | `src/` のファイルをつなぎ合わせて `index.html` を作る（Python の標準機能だけ） | `python3 tools/build.py`（`--check` で、組み立て済みかどうかだけ確認） |
+| `build.py` | `src/` のファイルをつなぎ合わせて `index.html` を作る（Python の標準機能だけ）。CSP の指紋も自動で入れる | `python3 tools/build.py`（`--check` で組み立て済みかとライブラリの指紋を確認、`--sri` で指紋を出し直す） |
+| `test_all.py` | 下の全部のテストを順に流す | `python3 tools/test_all.py` |
 | `webtest/smoke.js` | Web版をブラウザ（Playwright の Chromium）で自動操作して、主な機能を確かめるテスト。結果を ○／× で出す | 下の「Web版のテスト」 |
 | `unity-stubs/` | Unity がなくても `MirrorMocapReceiver.cs` のコンパイルを確かめるための、Unity と UniVRM の簡易部品（スタブ） | `tools/unity-stubs/check.sh`（`mono-mcs` が必要） |
 | `test_bridge.py` | ブリッジ（bridge.py）の自動テスト。接続できるページ・接続コード・壊れたデータ・上限など15項目 | `python3 tools/test_bridge.py` |
 | `osc_log.py` | VRChat や VSeeFace の代わりに、届いた OSC を表示する受信テスト用プログラム | `python3 tools/osc_log.py native/bridge 30 9000`（30秒、ポート9000） |
 
+## 全部のテストをまとめて流す
+```bash
+python3 tools/test_all.py
+```
+組み立て・ライブラリの指紋（SRI）の確認 → スクリプトの文法 → PCブリッジ → Web版（ブラウザ）の順に流して、最後に ○／× を出します。ブラウザのテストを省くときは `--quick` を付けます。GitHub に送ると、同じテストが GitHub 側でも自動で走ります（`.github/workflows/test.yml`。結果はリポジトリの「Actions」タブ）。
+
 ## Web版のテスト
+最初に1回だけ、テスト用の部品を入れます。
 ```bash
 cd tools/webtest && npm install
 ```
-```bash
-python3 -m http.server 8765
-```
-（リポジトリの一番上のフォルダで、別のターミナルで動かしておく）
+テストはWebサーバーを自分で立ち上げるので、そのまま実行できます。
 ```bash
 cd tools/webtest && node smoke.js
 ```

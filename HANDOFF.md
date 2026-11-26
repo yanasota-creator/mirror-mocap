@@ -1,6 +1,6 @@
 # Mirror Mocap 引き継ぎ資料
 
-最終更新：2026-11-26（4回目のセッション）。次のセッション（人でもAIでも）が、ここから続きを始められるように書いています。
+最終更新：2026-11-26（4回目のセッション：ファイル分割・表情・セキュリティ・設定欄の整理・テストの自動化）。次のセッション（人でもAIでも）が、ここから続きを始められるように書いています。
 
 ---
 
@@ -46,7 +46,8 @@ native/README.md           PC版・ブリッジ・外部連携の説明、Unity 
 native/tracker/            tracker.py, requirements.txt, start-windows.bat, start-mac.command
 native/bridge/             bridge.py（標準ライブラリだけ）, start-windows.bat, start-mac.command
 native/unity/Assets/MirrorMocap/MirrorMocapReceiver.cs
-tools/                     開発用（build.py, webtest/smoke.js, unity-stubs/, osc_log.py）
+tools/                     開発用（build.py, test_all.py, test_bridge.py, webtest/smoke.js, unity-stubs/, osc_log.py）
+.github/workflows/test.yml GitHub に送るたびに tools/test_all.py を自動で流す
 ```
 
 ### ファイル分割（4回目のセッション）
@@ -66,6 +67,7 @@ tools/                     開発用（build.py, webtest/smoke.js, unity-stubs/,
 | `06-loop-settings.js` | 毎コマの処理（`tick`）、録画、画質、設定の保存（`SAVED_IDS`） |
 | `10`〜`15-*.js` | 追加機能（下の「5. 機能の地図」） |
 | `16-face-extras.js` | 表情の固定・頬染め・うなずき・表情メーター |
+| `17-panel-nav.js` | 設定欄のタブ（`data-cat`）と検索（`/` キー） |
 | `99-boot.js` | 起動処理、テスト用の入口 `window.__mocap` |
 
 ## 4. Web版のしくみ（土台）
@@ -189,7 +191,9 @@ tools/                     開発用（build.py, webtest/smoke.js, unity-stubs/,
 - クラウド環境の制限
   - jsDelivr / unpkg / cdnjs / Arweave / hub.vroid.com などには接続できない
   - raw.githubusercontent.com・npm・PyPI・storage.googleapis.com（MediaPipe のモデルとテスト用写真）には接続できる。公開リポジトリ（例：vrm-c/UniVRM）は clone できる
-- **テスト**：`tools/README.md` を参照
+- **テスト**：`python3 tools/test_all.py` で全部（組み立て・SRI・文法・ブリッジ・ブラウザ）。詳しくは `tools/README.md`。smoke.js はWebサーバーを自分で立てるので、別のターミナルは不要
+- **設定欄**：区分（`<section class="sec">`）には `data-cat` で分類（basic / face / stream / play / save / link、複数可）を付ける。付け忘れるとタブで出なくなる。検索は区分の中の直下の要素ごとに文字を探す
+- **グリッドのはみ出し**：グリッドの列は `minmax(0, 1fr)` にする（`1fr` だけだと、横に長い部品1つで欄全体がはみ出した）
   - 描画は1秒に3〜5コマしか出ません。決まった時間だけ待つテストは失敗しやすいので、結果が出るまで待つ形で書きます
   - Playwright の `waitForFunction` に async 関数を渡すと、Promise が「真」と判定されて待ちません
   - 折りたたまれている欄の中の要素はクリックできません。テストでは `.sec.closed` を外してから操作します

@@ -1,0 +1,32 @@
+# Runs every check (tools/test_all.py) on each push and pull request.
+# A red ✗ on GitHub means something to fix: often "index.html is out of date" (run python tools/build.py and commit).
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install the libraries the page loads, and a browser
+        working-directory: tools/webtest
+        run: |
+          npm ci
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Run all checks
+        run: python tools/test_all.py
