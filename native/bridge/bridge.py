@@ -194,6 +194,7 @@ class Bridge:
         self.frames = 0
         self.clients = 0
         self.writers = set()
+        self.viewers = set()
         self.vmc_in_frames = 0
 
     def broadcast(self, obj):
@@ -211,14 +212,24 @@ class Bridge:
             except OSError:
                 pass
 
-    def handle(self, text: str):
+    def handle(self, text: str, writer=None):
         try:
             msg = json.loads(text)
         except ValueError:
             return
         kind = msg.get("type", "frame")
+        if kind == "hello" and msg.get("role") == "viewer" and writer is not None:
+            self.viewers.add(writer)  # an OBS browser-source page that only shows the avatar
+            print("OBS用ビューアがつながりました", flush=True)
+            return
         if kind == "frame":
             self.frames += 1
+            for w in list(self.viewers):  # pass the pose on to the viewers as it is
+                if w is not writer:
+                    try:
+                        self._write_text(w, text)
+                    except (ConnectionError, RuntimeError):
+                        self.viewers.discard(w)
             if self.vmc:
                 self.send(vmc_packets(msg), self.vmc)
             if self.vrc:
@@ -278,12 +289,13 @@ class Bridge:
                 if op in (0, 1):
                     buf += data
                     if b0 & 0x80:  # final fragment
-                        self.handle(buf.decode("utf-8", "replace")); buf = b""
+                        self.handle(buf.decode("utf-8", "replace"), writer); buf = b""
         except (asyncio.IncompleteReadError, ConnectionError):
             pass
         finally:
             self.clients -= 1
             self.writers.discard(writer)
+            self.viewers.discard(writer)
             print("Web版との接続が切れました", flush=True)
             writer.close()
 
