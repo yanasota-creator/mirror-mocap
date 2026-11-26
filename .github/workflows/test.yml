@@ -30,3 +30,5 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Run all checks
         run: python tools/test_all.py
+      - name: The libraries on jsDelivr match the fingerprints in the page
+        run: python tools/build.py --check-cdn

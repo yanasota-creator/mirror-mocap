@@ -134,6 +134,8 @@ function serve() {
     await ev(() => { window.__mocap.nod.coolUntil = 0; });
     await feedTurn('yaw');
     const shakeOk = await until(() => window.__mocap.nod.count.shake > 0, 15000);
+    if (!nodOk || !shakeOk) console.log('nod debug:', nodOk, shakeOk, await ev(() => { const m = window.__mocap; return JSON.stringify({ count: m.nod.count, n: m.nod.hist.length,
+      hist: m.nod.hist.map(h => [+(h.t % 100).toFixed(2), +h.pitch.toFixed(1), +h.yaw.toFixed(1)]), seen: performance.now() / 1000 - m.seen.face, checked: document.getElementById('optNod').checked, frozen: m.frozen }); }));
     await stopFace(); await page.click('label:has(#optNod)');
     return nodOk && shakeOk && await ev(() => window.__mocap.nod.count.nod >= 1);
   });

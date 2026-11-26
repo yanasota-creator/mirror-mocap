@@ -13,6 +13,8 @@ from file:// cannot load other script files).
                                     library fingerprints (SRI) in the import map match the files in
                                     tools/webtest/node_modules (the same versions the page loads)
     python tools/build.py --sri     print the fingerprints to paste into the import map after a version change
+    python tools/build.py --check-cdn   download the files from jsDelivr itself and compare (needs access to it;
+                                        run on GitHub by the test workflow)
 
 Edit the files in src/, never index.html directly: it is overwritten on build.
 """
@@ -85,6 +87,22 @@ def check_sri() -> list:
     return problems
 
 
+def check_cdn() -> list:
+    """What the page really gets: each file from jsDelivr, against the fingerprint the page demands."""
+    import urllib.request
+    problems = []
+    for url, want in import_map().get('integrity', {}).items():
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                got = 'sha384-' + base64.b64encode(hashlib.sha384(r.read()).digest()).decode()
+        except OSError as e:
+            problems.append(f'{url}: could not download ({e})'); continue
+        print(('ok   ' if got == want else 'DIFF ') + url)
+        if got != want:
+            problems.append(f'{url}: jsDelivr serves different bytes ({got}); the page would refuse to start')
+    return problems
+
+
 def print_sri():
     for url in import_map().get('integrity', {}):
         f, _, _ = local_copy(url)
@@ -112,6 +130,11 @@ def main() -> int:
     if '--sri' in sys.argv:
         print_sri()
         return 0
+    if '--check-cdn' in sys.argv:
+        problems = check_cdn()
+        for p in problems:
+            print('CDN:', p)
+        return 1 if problems else 0
     html = build()
     current = OUT.read_text(encoding='utf-8') if OUT.exists() else None
     if '--check' in sys.argv:
