@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mirror Mocap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+<!-- @include style.css -->
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><b>Mirror Mocap</b><small>内蔵カメラ → 3Dアバター</small></div>
+    <div class="chips" aria-label="トラッキング状態">
+      <span class="chip" id="chipBody">体</span>
+      <span class="chip" id="chipFace">顔</span>
+      <span class="chip" id="chipLH">左手</span>
+      <span class="chip" id="chipRH">右手</span>
+    </div>
+    <div class="meter" id="meter">推定 — fps · 描画 — fps</div>
+  </header>
+
+  <div class="main">
+    <main class="stage" id="stage">
+      <canvas id="three" aria-label="3Dアバター表示"></canvas>
+
+      <figure class="pip mirror" id="pip" hidden title="タップで小さく／元に戻す">
+        <div class="inner"><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div>
+        <figcaption id="pipLabel">カメラ</figcaption>
+      </figure>
+
+      <div class="views" role="group" aria-label="視点">
+        <button type="button" data-view="full" aria-pressed="false">全身</button>
+        <button type="button" data-view="upper" aria-pressed="true">上半身</button>
+        <button type="button" data-view="face" aria-pressed="false">顔</button>
+        <button type="button" id="myView" title="クリックで保存した視点へ／長押しで今の視点を保存">★</button>
+      </div>
+
+      <div class="intro" id="intro">
+        <div class="card">
+          <h1>内蔵カメラだけで、<br>アバターを動かす</h1>
+          <p>体・顔・指の動きをブラウザ内のAI（MediaPipe）で推定して、3Dモデルに反映します。映像はこのPCの外には送られません。</p>
+          <p>右のパネル（スマホでは下）で、表情・背景・配信モード・小物・アクセサリー・録画・VRChat 連携などが使えます。見出しを押すと開きます。</p>
+          <div class="row">
+            <button type="button" class="btn primary" id="startBtn">カメラを開始</button>
+            <label class="btn file">動画ファイルで試す<input type="file" id="videoFile2" accept="video/*"></label>
+          </div>
+          <p class="hint">初回はAIモデル（約20MB）をダウンロードします。カメラの許可を聞かれたら「許可」を選んでください。</p>
+          <p class="note" id="loadNote" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="countdown" id="countdown" hidden aria-live="assertive"></div>
+      <div class="liftScore" id="liftScore" hidden></div>
+      <div class="frozen" id="frozenBadge" hidden>ポーズ固定中（Space で解除）</div>
+      <button type="button" class="btn stream-exit" id="streamExit" hidden>配信モードを終わる（Esc）</button>
+      <div class="toast" id="toast" role="alert" hidden><b id="toastTitle"></b><span id="toastBody"></span><button type="button" id="toastClose">閉じる</button></div>
+    </main>
+
+    <aside class="panel">
+      <section class="sec">
+        <h2>入力</h2>
+        <div class="grid2">
+          <button type="button" class="btn" id="camBtn">カメラ開始</button>
+          <label class="btn file">動画ファイル<input type="file" id="videoFile" accept="video/*"></label>
+        </div>
+        <select id="camSelect" aria-label="使用するカメラ"><option value="">既定のカメラ</option></select>
+        <div class="privacy">
+          <label class="toggle"><span>カメラ映像を表示<small>オフにすると、画面に自分の顔が映りません（推定は続きます）</small></span><input type="checkbox" id="optPreview" checked></label>
+          <label class="toggle"><span>表示をロック<small>ロック中は表示をオンにできません。配信・画面共有中の顔バレ防止に</small></span><input type="checkbox" id="optPreviewLock"></label>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>アバター</h2>
+        <div class="cur">
+          <div class="cur-th" id="curThumb" aria-hidden="true"></div>
+          <div class="cur-tx"><b id="avatarName">—</b><span id="avatarCredit"></span></div>
+        </div>
+        <button type="button" class="btn primary" id="pickBtn">モデルを選ぶ</button>
+        <div class="grid2">
+          <button type="button" class="btn" id="mannequinBtn">マネキン</button>
+          <label class="btn file">自分のVRM<input type="file" id="vrmFile" accept=".vrm"></label>
+        </div>
+        <label class="toggle"><span>読み込んだVRMをこのブラウザに保存<small>次からは「モデルを選ぶ」に出ます。保存先はこのブラウザの中だけです</small></span><input type="checkbox" id="optSaveVrm" checked></label>
+      </section>
+
+      <section class="sec">
+        <h2>処理モード</h2>
+        <select id="optQuality" aria-label="処理モード">
+          <option value="light">軽量（速さ優先・古いPC向け）</option>
+          <option value="standard" selected>標準（精度と速さのバランス）</option>
+          <option value="high">高精度（GPUが強いPC向け）</option>
+        </select>
+        <p class="hint" id="perfDetail">推定にかかる時間がここに出ます。</p>
+      </section>
+
+      <section class="sec">
+        <h2>トラッキング</h2>
+        <label class="toggle">体<input type="checkbox" id="optBody" checked></label>
+        <label class="toggle">顔と表情<input type="checkbox" id="optFace" checked></label>
+        <label class="toggle">手と指<input type="checkbox" id="optHands" checked></label>
+        <label class="toggle"><span>脚<small>膝と足首が映っているときだけ動かします</small></span><input type="checkbox" id="optLegs" checked></label>
+        <label class="toggle"><span>ミラー<small>鏡のように同じ側の手が動きます</small></span><input type="checkbox" id="optMirror" checked></label>
+        <label class="toggle"><span>座りポーズ<small>脚が映っていないとき、椅子に座った形にします</small></span><input type="checkbox" id="optSit"></label>
+        <label class="toggle"><span>椅子を表示<small>座りポーズのときに椅子を置きます</small></span><input type="checkbox" id="optChair" checked></label>
+        <label class="toggle"><span>机を表示<small>座りポーズのときに前に机を置きます。小物を机に置けます</small></span><input type="checkbox" id="optDesk"></label>
+        <label class="toggle"><span>体の位置も動かす<small>左右・前後に動く、しゃがむとアバターも移動します（「正面リセット」の位置が基準）</small></span><input type="checkbox" id="optMove"></label>
+        <div class="slider">
+          <div class="top"><label for="optSmooth">なめらかさ</label><output id="smoothOut">45</output></div>
+          <input type="range" id="optSmooth" min="0" max="100" value="45">
+          <p class="hint">上げるとブレが減り、動きが少し遅れます。</p>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optJiggle">ぷるぷる（慣性）</label><output id="jiggleOut">55</output></div>
+          <input type="range" id="optJiggle" min="0" max="100" value="55">
+          <p class="hint">上げると動きが行き過ぎて戻り、耳・しっぽ・髪がよく揺れます。</p>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optMouthGain">口・笑顔の感度</label><output id="mouthGainOut">50</output></div>
+          <input type="range" id="optMouthGain" min="0" max="100" value="50">
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optBlinkGain">まばたきの感度</label><output id="blinkGainOut">50</output></div>
+          <input type="range" id="optBlinkGain" min="0" max="100" value="50">
+          <p class="hint">上げると小さな動きでも反応し、下げると大きく動かしたときだけ反応します。</p>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>調整</h2>
+        <button type="button" class="btn" id="calibBtn">正面リセット<kbd>C</kbd></button>
+        <label class="toggle"><span>今の顔を「無表情」として記憶する<small>何もしていないのに笑顔や口開きに見えるときに効きます（記憶はページを閉じるまで）</small></span><input type="checkbox" id="optNeutral" checked></label>
+        <label class="toggle"><span>3秒数えてから記憶する<small>押したあと、まっすぐ座り直す時間を取ります</small></span><input type="checkbox" id="optCalibDelay" checked></label>
+        <p class="hint">カメラに向かってまっすぐ座った状態で押すと、その姿勢を「正面」として記憶します。首や体が傾いて見えるときに使います。</p>
+        <button type="button" class="btn" id="freezeBtn" aria-pressed="false">ポーズを固定<kbd>Space</kbd></button>
+        <details class="keys"><summary>キーボード操作</summary>
+          <table>
+            <tr><td><kbd>1</kbd>〜<kbd>5</kbd></td><td>表情（喜・怒・哀・驚・穏）／ <kbd>0</kbd> で解除</td></tr>
+            <tr><td><kbd>C</kbd></td><td>正面リセット</td></tr>
+            <tr><td><kbd>F</kbd></td><td>配信モードの切り替え（<kbd>Esc</kbd> でも戻る）</td></tr>
+            <tr><td><kbd>P</kbd></td><td>スクリーンショット</td></tr>
+            <tr><td><kbd>Space</kbd></td><td>ポーズを固定／解除（スクショ用）</td></tr>
+            <tr><td>右ドラッグ</td><td>カメラを平行移動（アバターを画面の端に寄せる）</td></tr>
+            <tr><td>ホイール</td><td>ズーム</td></tr>
+          </table>
+        </details>
+        <div class="grid3">
+          <button type="button" class="btn sm" id="exportSettings">設定を保存</button>
+          <label class="btn sm file">設定を読込<input type="file" id="importSettings" accept=".json,application/json"></label>
+          <button type="button" class="btn sm" id="resetSettings">初期化</button>
+        </div>
+        <p class="hint">「設定を保存」でファイルに書き出し、別のPCやブラウザで「設定を読込」すると同じ設定になります。</p>
+      </section>
+
+      <section class="sec">
+        <h2>録画</h2>
+        <div class="grid2">
+          <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
+          <select id="recFormat" aria-label="録画の保存形式">
+            <option value="mp4" selected>MP4（スマホ・SNS向け）</option>
+            <option value="webm">WebM</option>
+          </select>
+        </div>
+        <label class="toggle"><span>3秒数えてから録画<small>押したあと、ポーズを取る時間を取ります（もう一度押すと取り消し）</small></span><input type="checkbox" id="optRecDelay"></label>
+        <p class="hint">停止するとファイルとして保存されます（MP4 で録れないブラウザでは WebM）。「マイクで口パク」がオンなら声も入ります。</p>
+        <div class="grid2">
+          <label class="btn sm file">BGMを読み込む<input type="file" id="bgmFile" accept="audio/*"></label>
+          <button type="button" class="btn sm" id="bgmPlay" disabled>BGM 再生</button>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optBgmVol">BGMの音量</label><output id="bgmVolOut">40</output></div>
+          <input type="range" id="optBgmVol" min="0" max="100" value="40">
+          <p class="hint" id="bgmName">BGMは録画にも入ります（くり返し再生）。</p>
+        </div>
+        <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
+        <label class="toggle"><span>スクショの背景を透明にする<small>アバターと小物だけが写ります（サムネイルやイラストの素材向け）</small></span><input type="checkbox" id="optShotAlpha"></label>
+        <div class="grid2">
+          <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
+          <select id="motionFormat" aria-label="モーションの保存形式">
+            <option value="vrma" selected>VRMA（表情も）</option>
+            <option value="bvh">BVH</option>
+          </select>
+        </div>
+        <label class="btn file" id="bvhPlayLabel">モーションを再生（VRMA / BVH）<input type="file" id="bvhFile" accept=".vrma,.bvh"></label>
+        <button type="button" class="btn" id="bvhStop" hidden>再生を止める</button>
+        <p class="hint">VRMA は VRM 公式のモーション形式で、表情も入ります（VRoid Hub・cluster・three-vrm など）。BVH は体の動きだけで、Blender などに読み込めます。配布されている VRMA（ダンスなど）も再生できます。</p>
+      </section>
+
+      <section class="sec">
+        <h2>外部連携</h2>
+        <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
+        <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
+        <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
+        <p class="status" id="vmcInStatus" aria-live="polite"></p>
+        <label for="vrcParam">VRChat：表情ボタンで送るパラメータ名</label>
+        <input type="text" id="vrcParam" class="text" placeholder="例：Expression（空欄なら送らない）" maxlength="64" spellcheck="false" autocomplete="off">
+        <p class="hint">表情ボタンを押すと、そのパラメータに番号（喜=1・怒=2・哀=3・驚=4・穏=5、解除=0）を送ります。番号の意味はアバターの作り次第です。</p>
+        <label class="toggle"><span>VRChat：両手を上げるとジャンプ<small>両手を頭より上に上げると、VRChat でジャンプします</small></span><input type="checkbox" id="optJump"></label>
+        <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
+        <p class="hint"><b>OBS に背景なしで映す</b>：OBS の「ブラウザ」ソースに次のURLを入れると、このページの動きが透明な背景で映ります（ブリッジが必要）。</p>
+        <div class="chat"><input type="text" class="text" id="viewerUrl" readonly aria-label="OBS用ビューアのURL"><button type="button" class="btn sm" id="copyViewer">コピー</button></div>
+      </section>
+
+      <section class="sec">
+        <h2>吹き出し・チャット</h2>
+        <div class="chat">
+          <input type="text" id="chatText" maxlength="144" placeholder="しゃべらせたい文字（Enter で送信）" aria-label="吹き出しに出す文字">
+          <button type="button" class="btn sm" id="chatSend">送信</button>
+        </div>
+        <label class="toggle"><span>画面に吹き出しを出す<small>アバターの頭の横に表示して、数秒で消えます</small></span><input type="checkbox" id="optBubble" checked></label>
+        <label class="toggle"><span>VRChat のチャットボックスにも送る<small>「PCブリッジに送信」がオンのときに使えます</small></span><input type="checkbox" id="optChatVrc" checked></label>
+        <label class="toggle"><span>音声認識で入力（字幕）<small>話した言葉を文字にして送ります。<b>音声は Google の音声認識サービスに送られます</b>（Chrome / Edge）</small></span><input type="checkbox" id="optSpeech"></label>
+        <p class="status" id="speechStatus" aria-live="polite"></p>
+      </section>
+
+      <section class="sec">
+        <h2>配信</h2>
+        <label for="optBg">背景</label>
+        <select id="optBg" aria-label="背景">
+          <option value="studio" selected>スタジオ（既定）</option>
+          <option value="room">部屋（3D）</option>
+          <option value="green">グリーンバック（OBSで抜く用）</option>
+          <option value="blue">ブルーバック</option>
+          <option value="white">白</option>
+          <option value="black">黒</option>
+          <option value="image">画像を読み込む…</option>
+          <option value="video">動画を読み込む…</option>
+        </select>
+        <input type="file" id="bgFile" accept="image/*" hidden>
+        <input type="file" id="bgVideoFile" accept="video/*" hidden>
+        <label for="optLight">照明</label>
+        <select id="optLight" aria-label="照明">
+          <option value="studio" selected>スタジオ（既定）</option>
+          <option value="bright">明るい</option>
+          <option value="sunset">夕焼け</option>
+          <option value="neon">ネオン</option>
+          <option value="night">夜</option>
+        </select>
+        <label for="optWeather">天気</label>
+        <select id="optWeather" aria-label="天気">
+          <option value="none" selected>なし</option>
+          <option value="sakura">桜</option>
+          <option value="snow">雪</option>
+          <option value="sparkle">キラキラ</option>
+          <option value="hearts">ハート</option>
+        </select>
+        <label class="toggle"><span>効果音<small>紙吹雪・ハート・ボールが当たったときなどに小さな音を鳴らします</small></span><input type="checkbox" id="optSfx"></label>
+        <label class="toggle"><span>カメラが体についていく<small>「体の位置も動かす」で動いたとき、カメラも一緒に動きます</small></span><input type="checkbox" id="optFollow" checked></label>
+        <label class="toggle"><span>カメラをゆっくり動かす<small>配信画面に少し動きを付けます</small></span><input type="checkbox" id="optSway"></label>
+        <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）<kbd>F</kbd></button>
+        <button type="button" class="btn" id="pipBtn">デスクトップに浮かべる（小窓）</button>
+        <p class="hint">「デスクトップに浮かべる」は、ほかのアプリの上に常に表示される小窓にアバターを出します（Chrome / Edge）。OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
+      </section>
+
+      <section class="sec">
+        <h2>表情</h2>
+        <div class="grid5" id="exprBtns">
+          <button type="button" class="btn sm" data-expr="happy" aria-pressed="false">喜<kbd>1</kbd></button>
+          <button type="button" class="btn sm" data-expr="angry" aria-pressed="false">怒<kbd>2</kbd></button>
+          <button type="button" class="btn sm" data-expr="sad" aria-pressed="false">哀<kbd>3</kbd></button>
+          <button type="button" class="btn sm" data-expr="surprised" aria-pressed="false">驚<kbd>4</kbd></button>
+          <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
+        </div>
+        <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <div id="customExprWrap" hidden>
+          <label>このモデル独自の表情</label>
+          <div class="grid3" id="customExpr"></div>
+        </div>
+        <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
+        <label class="toggle"><span>グッド👍で「GOOD!」<small>親指を立てると、手の上にマークが出ます</small></span><input type="checkbox" id="optGood" checked></label>
+        <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
+        <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
+        <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
+        <label class="toggle"><span>目線がマウスを追う<small>顔が映っていないとき、マウスの方を見ます（小窓のマスコットにも）</small></span><input type="checkbox" id="optMouseGaze" checked></label>
+        <label class="toggle"><span>クリックで反応<small>頭をクリックすると喜び、体をクリックすると驚きます</small></span><input type="checkbox" id="optPoke" checked></label>
+        <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
+        <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
+        <div class="slider">
+          <div class="top"><label for="optMicGain">マイク感度</label><output id="micGainOut">50</output></div>
+          <input type="range" id="optMicGain" min="0" max="100" value="50">
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>小物</h2>
+        <div class="grid3" id="propBtns">
+          <button type="button" class="btn sm" data-prop="ball">ボール</button>
+          <button type="button" class="btn sm" data-prop="box">箱</button>
+          <button type="button" class="btn sm" data-prop="mic">マイク</button>
+          <button type="button" class="btn sm" data-prop="light">ペンライト</button>
+          <button type="button" class="btn sm" data-prop="heart">ハート</button>
+          <button type="button" class="btn sm" data-prop="wand">魔法の杖</button>
+          <button type="button" class="btn sm" data-prop="star">星</button>
+          <button type="button" class="btn sm" id="propClear">全部消す</button>
+        </div>
+        <div class="grid2">
+          <button type="button" class="btn sm" id="confettiBtn">紙吹雪</button>
+          <label class="toggle">拍手で紙吹雪<input type="checkbox" id="optClap" checked></label>
+        </div>
+        <button type="button" class="btn" id="liftBtn">リフティングゲーム</button>
+        <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
+        <p class="hint">リフティングゲーム：頭の上からボールが落ちてきます。頭や手で打ち上げて、床に落とさずに何回続くか数えます。<br>手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。マウスや指でドラッグしても動かせます（離すと投げられます）。</p>
+      </section>
+
+      <section class="sec">
+        <h2>アクセサリー</h2>
+        <div class="grid2">
+          <label class="toggle">ねこ耳<input type="checkbox" id="accEars"></label>
+          <label class="toggle">王冠<input type="checkbox" id="accCrown"></label>
+          <label class="toggle">メガネ<input type="checkbox" id="accGlasses"></label>
+          <label class="toggle">天使の輪<input type="checkbox" id="accHalo"></label>
+        </div>
+        <p class="hint">頭に付いて一緒に動きます。モデルによって位置が少しずれることがあります。</p>
+      </section>
+
+      <section class="sec">
+        <h2>精度を上げるコツ</h2>
+        <ul class="tips">
+          <li><b>明るく</b>：顔に正面から光が当たると指と表情が安定します。</li>
+          <li><b>距離</b>：画面から60〜100cm離れて、ひじまで映すと腕が動きます。</li>
+          <li><b>手</b>：手のひらをカメラに向けると指の推定が正確になります。</li>
+          <li><b>服と背景</b>：背景と色が違う服だと体の輪郭を拾いやすくなります。</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<dialog class="browser" id="browser" aria-labelledby="brTitle">
+  <div class="br-head">
+    <h3 id="brTitle">モデルを選ぶ</h3>
+    <button type="button" class="btn" id="brClose">閉じる</button>
+  </div>
+  <p class="br-note">どれも作者が無料での利用を認めているアニメ調のVRMです。選ぶと配布元（GitHub）から読み込みます（1体10〜20MB）。バッジはライセンスの種類です。</p>
+  <div class="br-grid" id="brGrid"></div>
+</dialog>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js",
+    "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js"
+  }
+}
+</script>
+<script type="module">
+<!-- @include js/00-setup.js -->
+<!-- @include js/01-ui-stage.js -->
+<!-- @include js/02-avatar.js -->
+<!-- @include js/03-solver.js -->
+<!-- @include js/04-mediapipe.js -->
+<!-- @include js/05-input.js -->
+<!-- @include js/06-loop-settings.js -->
+<!-- @include js/10-background-expressions-mic.js -->
+<!-- @include js/11-props-lighting-accessories.js -->
+<!-- @include js/12-effects-bubble-bodypos.js -->
+<!-- @include js/13-ownvrm-pip-weather-vmcin.js -->
+<!-- @include js/14-games-viewer-room.js -->
+<!-- @include js/15-export-bridge-recording.js -->
+<!-- @include js/99-boot.js -->
+</script>
+</body>
+</html>
