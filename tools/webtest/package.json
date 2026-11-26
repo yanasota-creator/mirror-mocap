@@ -1,0 +1,11 @@
+{
+  "name": "mirror-mocap-webtest",
+  "private": true,
+  "description": "Local copies of the libraries index.html loads from jsDelivr, so the smoke test runs without the CDN. Versions match the import map in index.html.",
+  "dependencies": {
+    "three": "0.170.0",
+    "@pixiv/three-vrm": "3.4.4",
+    "@pixiv/three-vrm-animation": "3.4.4",
+    "@mediapipe/tasks-vision": "0.10.21"
+  }
+}

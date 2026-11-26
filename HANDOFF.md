@@ -1,18 +1,25 @@
 # Mirror Mocap 引き継ぎ資料
 
-最終更新：2026-11-25（3回目のセッション）。次のセッション（人でもAIでも）がここから続きを始められるように書いています。
+最終更新：2026-11-26（3回目のセッションの終わり）。次のセッション（人でもAIでも）が、ここから続きを始められるように書いています。
+
+---
 
 ## 1. 何を作ったか
 
-PC内蔵カメラ1台（フルトラッキングなし）で、自分の体・顔（表情）・指の動きを推定して、3Dアバター（VRM）を動かすツールです。
+PC内蔵カメラ1台（フルトラッキングなし）で、体・顔（表情）・指の動きを推定して、3Dアバター（VRM）を動かすツールです。配信・小物・VRChat などとの外部連携の機能も、たくさん付いています。
 
-| 版 | 場所 | 状態 |
+| 部分 | 場所 | 状態 |
 |---|---|---|
-| **Web版**（本体） | `index.html`（1ファイル完結） | 動作確認済み。公開中 |
-| **PC版**（試作） | `native/`（Python トラッカー ＋ Unity スクリプト） | トラッカーは確認済み。Unity側はUniVRMのソースと照合済み・**実機では未確認** |
+| **Web版**（本体） | `index.html`（1ファイル、約3400行） | 開発環境で自動テスト済み。公開中 |
+| **PCブリッジ** | `native/bridge/bridge.py` | Web版 ⇄ VMC / VRChat OSC の中継。受信テスト用プログラムで形式は確認済み。**実アプリでは未確認** |
+| **PC版トラッカー** | `native/tracker/tracker.py` | Python ＋ MediaPipe。動画入力で送信まで確認済み |
+| **PC版 Unity** | `native/unity/Assets/MirrorMocap/MirrorMocapReceiver.cs` | UniVRM 0.131 のソースと照合し、スタブでのコンパイルだけ確認。**Unity実機では一度も動かしていない** |
+| 開発用の道具 | `tools/` | 自動テスト（`webtest/smoke.js`）、Unityのコンパイル確認、OSC受信テスト。説明は `tools/README.md` |
 
 - リポジトリ：https://github.com/yanasota-creator/mirror-mocap
 - 公開URL（GitHub Pages、スマホでも使用可）：https://yanasota-creator.github.io/mirror-mocap/
+- OBS用ビューア：https://yanasota-creator.github.io/mirror-mocap/?viewer
+- 利用者向けの説明：`README.md`（「できること」の表が機能一覧）、`native/README.md`（PC版・ブリッジ・外部連携・Unity のチェックリスト）
 
 ## 2. 利用者について
 
@@ -21,11 +28,25 @@ PC内蔵カメラ1台（フルトラッキングなし）で、自分の体・�
 - コマンドを出すときは、先に目的を説明してください
 - エラーのときは、まず原因から説明してください
 - かわいいアニメ調の人型モデルが好みです（ちびキャラや動物は不採用でした）
-- 「重い」「精度」を気にしています。PC版はUnityがいいという意向です
-- 顔バレを気にしています（カメラ映像の非表示ロックを付けた。音声認識のように外部に送る機能は初期オフ＋確認を出す）
-- 「機能を片っ端から増やしてほしい」という希望があり、3回目のセッションで大量に追加した
+- 「重い」「精度」を気にしています。PC版は Unity がいいという意向です
+- **顔バレを気にしています**。カメラ映像の非表示とロックを付けました。音声認識のように外部に送る機能は、初期オフにして確認も出します
+- 「機能を片っ端から増やしてほしい」という希望で、3回目のセッションで大量に追加しました
+- 使っている端末：PC（Windows か Mac かは未確認）、スマホでも Web版を開いています
 
-## 3. Web版のしくみ（`index.html`）
+## 3. ファイルの構成
+
+```
+index.html                 Web版の本体（HTML・CSS・JS がすべて入っている）
+README.md                  利用者向けの説明（できること・開き方・コツ）
+HANDOFF.md                 この資料
+native/README.md           PC版・ブリッジ・外部連携の説明、Unity の動作確認チェックリスト
+native/tracker/            tracker.py, requirements.txt, start-windows.bat, start-mac.command
+native/bridge/             bridge.py（標準ライブラリだけ）, start-windows.bat, start-mac.command
+native/unity/Assets/MirrorMocap/MirrorMocapReceiver.cs
+tools/                     開発用（webtest/smoke.js, unity-stubs/, osc_log.py）
+```
+
+## 4. Web版のしくみ（土台）
 
 ```
 カメラ → Web Worker×3（体/顔/手のAIを並列） → 関節の角度を計算 → ばね式の補間 → three.js + three-vrm で描画
@@ -33,90 +54,134 @@ PC内蔵カメラ1台（フルトラッキングなし）で、自分の体・�
 
 | 部分 | 中身 |
 |---|---|
-| AI | MediaPipe Tasks Vision 0.10.21（jsDelivr から読み込み）。体 = Pose Landmarker（軽量=lite / 標準=full / 高精度=heavy）、顔 = Face Landmarker（表情52種付き）、手 = Hand Landmarker（2本） |
-| 並列化 | AIごとに Web Worker を1つ起動する。各Workerは起動直後にGPUとCPUを実測し、速い方を自動で選ぶ。Workerが使えなければ、メインスレッドで動かす（`createMainEngine`） |
-| 軽量化 | 手首が映っていないときは手のAIを止め、8コマに1回だけ確認する。軽量モードでは体と手を1コマおきに交互に動かす。描画が35fpsを切ったら3Dの解像度を段階的に下げる。スマホでは最初から軽量モードにする |
-| 関節の計算 | 推定した点から骨の向きを出して、関節の回転にする（`aim` / `basisQuat` / `worldFromBasis`）。座標の変換は `conv`、ミラー時の左右入れ替えは `subjSide` |
-| 補間 | AIの結果は「目標の角度」として置き、描画するたびに、ばね＋ダンパー（減衰器）で近づける（`easeToTargets`）。「なめらかさ」＝ばねの固さ、「ぷるぷる」＝減衰の弱さ。VRMの揺れもの（spring bone）の強さも「ぷるぷる」に連動 |
-| ブレ止め | 点の座標に One Euro フィルターをかける |
-| 手が顔に重なったとき | `faceOcclusion` で判定する。顔の前に手 → 頭の向きを維持（最大4秒）。口の近く → 口と笑顔の更新を止める。目の近く → まばたきと視線の更新を止める。顔の向きが1回で25°以上飛んだ値は2回まで捨てる。止めているあいだは上部の「顔」チップがオレンジになる |
-| カメラ映像の非表示 | 「カメラ映像を表示」オフで左下の小窓を札だけにする（映像は `visibility: hidden` で隠すだけで再生は続け、推定は止めない）。「表示をロック」中は表示スイッチを無効化し、解除には `confirm` を出す。どちらも保存される。録画は元から3D画面（canvas）だけ |
-| 追加機能（3回目のセッション） | 背景（グリーンバック等・画像）、配信モード（Esc で戻る）、PNGスクショ、表情ボタン（1〜5キー）、マイク口パク（AnalyserNode の音量と大まかな周波数）、小物（握ると掴む＝指先と手首の距離から握り具合 `grip` を出す。重力オン/オフ）、BVH書き出し（30fps固定）、PCブリッジ（`native/bridge/bridge.py`：WebSocket → VMC / VRChat OSC）。外部へ出す値は `exportPose`（正規化ボーンのローカル回転、VRM0は180°戻す）と `exportTrackers` |
-| 追加機能（続き） | 照明、アクセサリー（`measureHead`：頭のボーン座標系でレイを撃って目の高さ・頭頂・顔の表面を測る。エフェクトの位置にも使う）、エフェクト（Sprite）、カメラ揺れ（描画の直前だけ位置をずらす）、パネルの折りたたみ、ピースで笑顔、VRMA書き出し（`vrmaBinary`：GLBを手書き。公式バリデータでエラー0）と再生（three-vrm-animation を動的 import。**AnimationMixer は値が変わったときしか書かないので使わず、トラックを毎フレーム自分で評価して書く**） |
-| 設定の保存 | 設定と最後に選んだモデルを localStorage（そのブラウザだけに残る保存場所）に保存 |
-| その他 | 正面リセット、ミラー、脚（膝と足首が見えるときだけ）、録画（.webm）、動画ファイル入力、自分のVRM読み込み、マネキン（オフライン用の予備） |
+| ライブラリ | three@0.170.0、@pixiv/three-vrm@3.4.4、@pixiv/three-vrm-animation@3.4.4（VRMA再生時だけ動的 import）、@mediapipe/tasks-vision@0.10.21。すべて jsDelivr から読み込み、import map でバージョンを固定 |
+| AI | 体 = Pose Landmarker（軽量=lite / 標準=full / 高精度=heavy）、顔 = Face Landmarker（表情52種）、手 = Hand Landmarker（2本） |
+| 並列化 | AIごとに Web Worker。起動直後に GPU と CPU を実測して速い方を使う。Worker が使えなければメインスレッド（`createMainEngine`） |
+| 軽量化 | 手首が映っていないときは手のAIを止め、8コマに1回だけ確認する。軽量モードは体と手を1コマおき。描画が35fpsを切ったら解像度を下げる。スマホは最初から軽量モード |
+| 関節の計算 | `aim` / `basisQuat` / `worldFromBasis`。座標の変換は `conv`、ミラーの左右入れ替えは `subjSide` |
+| 補間 | AIの結果を「目標の角度」（`targets`）にし、毎コマ、ばね＋ダンパー（減衰器）で近づける（`easeToTargets`）。`withTargets(fn)` の中では、骨の回転＝目標として書き換える |
+| ブレ止め | One Euro フィルター |
+| 手が顔に重なったとき | `faceOcclusion`（距離はピクセル基準。2回目のセッションで縦横比の不具合を直した） |
+| 設定の保存 | localStorage の `mirror-mocap-settings`。保存する項目は `SAVED_IDS`（要素の id の一覧）。パネルの開閉は `mirror-mocap-closed`、★の視点は `mirror-mocap-myview` |
 
-### 収録モデル（13体）
-全部、作者が無料での利用を認めているモデルです。`MODELS` 配列に、URL・サムネイル・クレジットを入れています。
+### 毎コマの処理の順番（`tick`）
+1. `pump()`：AI に映像を渡す（ポーズ固定中は止める）
+2. `withTargets(idle)` → `easeToTargets`：待機中の姿勢・呼吸・ゆらゆら → 補間
+3. **`extrasBeforeUpdate`**：表情の合成（表情ボタン・ピース・マイク・自動まばたき・クリック反応）、モーション再生（`applyPlayback`）、体の位置と座りポーズ（`stepBodyPos`）、VMC受信（`applyVmcIn`）、OBSビューア（`applyViewer`）
+4. `avatar.update(dt)`：three-vrm の更新（表情の反映・揺れもの）
+5. **`extrasAfterUpdate`**：拍手・ジャンプの判定、カメラ追従、天気、杖、リフティング、紙吹雪、レーザー、GOOD!、エフェクト、吹き出し、手と小物（`updateHands`・`stepProps`）、ブリッジ送信（`bridgeFrame`）、モーション記録（`bvhCapture`）
+6. `beforeRender` → 描画 → `afterRender`：カメラ揺れ（描画のあいだだけ位置をずらす）
 
-- VRM1サンプル（pixiv, VRM Public License 1.0）
-- アリシア・ソリッド（ドワンゴ、ニコニ立体ちゃん利用規約。暴力・性的表現は不可）
-- 千駄ヶ谷 篠、千駄ヶ谷 渋、ビビ、ヴィータ、ヴィクトリア、HairSample、Darkness Shibu（VRoid公式サンプル、CC0）
-- シェイプル（lowteq、CC0）
-- AvatarSample A・B・C（VRoid、AvatarSample規約：商用可・クレジット不要・ヘイト等の用途は不可）
+追加機能の処理時間は、小物と雪を出した状態でも1コマ 0.2ms ほどです（パネルの「1回の推定」の後ろに「追加機能 ○ms」と出ます）。
 
-読み込み元は github.com/Cookieboty/companion-desk-models（タグで固定、配布元の照合値と一致を確認済み）と、github.com/madjin/vrm-samples、vrm-c/UniVRM、pixiv/three-vrm です。ToxSam/open-source-avatars のCC0カタログ（Arweave/IPFS）は、ブラウザから読み込めないものが多かったので削除しました。
+## 5. 機能の地図（どこに何があるか）
 
-## 4. PC版（`native/`）
+`index.html` の後半の「Extras」区画（`/* ===== Extras ... */` から `/* ---------------- Boot` の前まで）に、追加機能がまとまっています。
 
-`native/README.md` に、利用者向けの導入手順があります。
+| 分類 | 機能 | 主な関数・変数 | メモ |
+|---|---|---|---|
+| 配信 | 背景（3D部屋・グリーン等・画像・動画） | `applyBackground` `fitBackground` `buildRoom` `bgVideo` | 画像は "cover" で合わせる |
+| | 照明 | `LIGHTS` `applyLight` | |
+| | 配信モード（F / Esc） | `setStreamMode` | スマホはタップで終了ボタンが出る |
+| | 小窓（Document PiP） | `pipWin` | キャンバスごと小窓へ移す。`resize()` より前に `let pipWin` を宣言（先に読むとエラーになるため） |
+| | 天気 | `applyWeather` `stepWeather` | THREE.Points |
+| | カメラ揺れ・追従・★視点 | `beforeRender` `followCamera` `MYVIEW_KEY` | ★の長押しの判定は、タイマーではなく操作の時刻で行う |
+| | OBSビューア（`?viewer`） | `VIEWER` `setupViewer` `applyViewer` | ブリッジが送る側の `frame` を viewer に中継。viewer は設定を保存しない |
+| 表情 | 表情ボタン・1〜5キー・独自表情 | `PRESETS` `presetW` `setPreset` `renderCustomExpr` | VRChatパラメータも `setPreset` から送る |
+| | 無表情の記憶・感度 | `faceNeutral` `lastBlend`（`solveFace` 内の `g()`）、`#optMouthGain` `#optBlinkGain` | 正面リセット時に記憶 |
+| | い・え の口 | `solveFace` の `target.ih` `target.ee` | |
+| | マイク口パク | `mic` `micMouth` | |
+| | ピース・グッド・指差し | `solveHand` の `grip.peaceAt` `grip[s+'GoodAt']` `grip[s+'PointAt']` | 指の伸び具合 `ext()` で判定 |
+| | エフェクト | `fxTexture` `spawnFx` `stepFx` | 表情ボタン等で「自分で出したとき」だけ出す |
+| | 自動まばたき・マウス目線・クリック反応 | `autoBlink` `mouseGazeTarget` `reaction` | |
+| 動き | 体の位置（左右・前後・上下） | `bodyPos` `stepBodyPos` | 肩の中心と肩幅のピクセル値から。前後は「肩幅の見かけ」 |
+| | 肩をすくめる | `shrug`（`solvePose` 内） | 耳と肩の縦の距離 ÷ 肩幅 |
+| | 座りポーズ・椅子・机 | `sit` `isSitting` `legRest` `placeChair` `placeDesk` `desk.box` | 脚が1秒映らないと座る |
+| | ポーズ固定（Space） | `frozen` `setFrozen` | |
+| 小物 | 出す・掴む・離す・持ち替え | `makeProp` `spawnProp` `updateHands` `holdUpright` | 握り具合 `grip[s]`（0〜1）、しきい値 0.6 / 0.35、届く距離 9cm |
+| | 物理・当たり判定 | `stepProps` → `stepPropsOnce`（1/120秒刻み）、`bodyColliders` | 刻まないと速いボールが頭をすり抜ける |
+| | マウスでドラッグ | `drag` | 投げる速さは操作の時刻（`e.timeStamp`）から |
+| | リフティング・杖・紙吹雪・拍手・レーザー・GOOD! | `lift` `stepWands` `burstConfetti` `detectClap` `stepLasers` `stepGood` | |
+| アクセサリー | ねこ耳・王冠・メガネ・天使の輪 | `headFrame` `measureHead` `applyAccessories` | 頭の座標系でレイを撃って、頭頂・顔の表面を測る |
+| 吹き出し | 吹き出し・音声認識 | `showBubble` `stepBubble` `say` `startSpeech` | 音声認識は Google に送られるので初期オフ＋確認 |
+| 保存 | 録画（MP4優先・声とBGM）・スクショ（透明も可） | `startRecording` `recordingAudio` `bgm` `#shotBtn` | |
+| | モーション記録・再生 | `exportPose` `bvhText` `vrmaBinary` `parseBVH` `playVRMA` `applyPlayback` | VRMA は GLB を手書き（公式バリデータでエラー0） |
+| | 自分のVRMの保存 | `idb` `saveOwnVRM` `ownList` `loadOwn` `renderOwn` | IndexedDB `mirror-mocap` / `vrms` |
+| | 設定の保存・読込・初期化 | `#exportSettings` `#importSettings` `#resetSettings` | 読み込みは `SAVED_IDS` の項目だけを受け付ける |
+| 外部連携 | ブリッジ接続・送信 | `bridge` `connectBridge` `bridgeFrame` `bridgeSend` | `ws://127.0.0.1:39541` |
+| | VMC受信 | `vmcIn` `applyVmcIn` `vrmBoneName` `vmcExpressions` | |
+| | VRChat：表情パラメータ・ジャンプ・チャット | `setPreset`、`detectJump`、`say` | |
+| その他 | 効果音 | `sfx` | WebAudio で合成（音声ファイルなし） |
+| | テスト用の入口 | `window.__mocap` | テストから値を直接読んだり、与えたりする |
 
-- `native/tracker/tracker.py`：OpenCVでカメラを読み、MediaPipeの3つのAIを LIVE_STREAM モード（非同期で並列）で動かして、UDP `127.0.0.1:39540` にJSONを送る
-  - **送るデータ**：`pose`（33点×xyz）、`vis`、`hl`/`hr`（本人の左手/右手、21点×xyz）、`face`（目尻2・額・あご、計4点）、`bs`（表情8値）、`occ`（手が顔/口/目に重なっているか）
-  - **確認済み**：mediapipe 1.2.2・Python 3.13 で、動画入力から40回分のデータが届くことを確認
-- `native/unity/Assets/MirrorMocap/MirrorMocapReceiver.cs`：Animatorの人型の骨を、Web版と同じ考え方で動かす。表情は UniVRM 1.0 の `Vrm10Instance.Runtime.Expression.SetWeight` で入れる
-  - Unity の座標は左手系（XYZの向きの取り方がWeb版と逆）なので、MediaPipe からの変換はミラー時 `(x,-y,-z)`、非ミラー時 `(-x,-y,-z)` にしている
-  - **未確認**：Unityの代わりの簡易部品（スタブ）とのコンパイルが通ることだけ確認済み。実機のUnityでは一度も動かしていない。特に、骨の向き・左右・UniVRMのControl Rigとの干渉は要確認
+## 6. 通信のまとめ
 
-### PC版の追加分（3回目）
-- `native/bridge/bridge.py`：Web版から WebSocket（`ws://127.0.0.1:39541`）で受けて、VMC（`/VMC/Ext/Bone/Pos` など、ポート39539）と VRChat OSC（`/tracking/trackers/1〜8`・`head`、`/chatbox/input`、ポート9000）に送る。標準ライブラリだけ。**Origin を許可リストで確認**（公開Web版・localhost・file://）。受信テスト用プログラムで形式は確認済み、実アプリでは未確認
-- Unity：表情キー 1〜5 / 0、Move Body（トラッカーが `sh`＝肩の中心と肩幅のピクセル値を送る）。スタブでのコンパイルのみ確認
+| 経路 | 方式・ポート | 中身 |
+|---|---|---|
+| Web版 → bridge.py | WebSocket `ws://127.0.0.1:39541` | `{type:'frame', bones, pos, trackers, blend, model}`（約30回/秒）、`chat` `typing` `param` `jump`、OBSビューアは `{type:'hello', role:'viewer'}` |
+| bridge.py → VMC受信アプリ | UDP 39539 | `/VMC/Ext/Bone/Pos`（Unityの骨名、左手系）、`/VMC/Ext/Blend/Val`（VRM0の名前 A, Joy など）→ `/VMC/Ext/Blend/Apply` |
+| bridge.py → VRChat | UDP 9000 | `/tracking/trackers/1〜8/position・rotation`、`head`、`/chatbox/input`、`/avatar/parameters/<名前>`、`/input/Jump` |
+| VMC送信アプリ → bridge.py → Web版 | UDP 39542（`--vmc-in-lan` で LAN からも）→ WebSocket | `{type:'vmc', bones, blend}` |
+| bridge.py → OBSビューア | WebSocket | 送る側の `frame` をそのまま中継 |
+| tracker.py → Unity | UDP 39540 | `pose` `vis` `hl` `hr` `face` `bs` `occ` `sh`（肩の中心と肩幅のピクセル値） |
 
-## 5. 既知の課題・次にやること
+- bridge.py は **Origin（接続元のページ）を許可リストで確認**します（公開Web版・localhost・127.0.0.1・file://）。ほかのサイトからは 403 で拒否
+- 外へ出す骨の値（`exportPose`）は、正規化ボーン（T字ポーズで回転0の骨）のローカル回転です。**VRM 0.x は three-vrm の中で180°回されているので、送るときに (−x, y, −z, w) で戻します**。受け取るとき（VMC受信・ビューア・VRMA）も同じ考え方です
+- three.js → Unity の変換：位置 (−x, y, z)、回転 (x, −y, −z, w)
 
-### 2回目のセッション（2026-11-05）でやったこと
-- **Unity版**：UniVRM 0.131.4 のソースを読んで確認した。エディタで取り込んだモデルには Control Rig が作られない（`Vrm10Instance.m_useControlRig` は保存されない設定で初期値 false）ので、骨の直接操作で正しい。実行中に読み込んで Control Rig があるモデルは、Control Rig の骨を動かすようにした
-- **PC版の視線**：`vrm.Runtime.LookAt.SetYawPitchManually(yaw, pitch)` で対応（UniVRMでは +yaw＝モデルの右、+pitch＝上。`LookAtTargetType` は `YawPitchValue` にする）
-- Unity 6 の新しい入力方式でも C / M キーが効くようにした。ポート使用中・Animator Controller 残りのときに Console に原因を出す
-- **手が顔に重なる判定の不具合を修正**（Web版・トラッカー両方）：口・目との距離を、画像の縦横比を考えずに測っていたため、PCでは判定範囲が縦につぶれ（あごを触っても反応しにくい）、スマホでは縦に約1.8倍伸びていた。ピクセル基準に直した
-- `native/README.md` に Unity の動作確認チェックリスト（11項目）を追加
+## 7. 確認できていること・いないこと
 
-### 3回目のセッション（2026-11-25）でやったこと
-Web版に機能を大量追加（README の「できること」の表が一覧）。主なもの：背景・照明・配信モード・小窓（Document PiP）・スクショ・表情ボタン/独自表情/ピース・マイク口パク・自動まばたき・エフェクト・小物を掴む・アクセサリー・吹き出しと音声認識・体の位置・自分のVRMの保存（IndexedDB）・モーション記録/再生（VRMA・BVH）・PCブリッジ・パネルの折りたたみ・正面リセットのカウントダウン・設定の初期化。
+### 開発環境で確認済み
+- `tools/webtest/smoke.js` の10項目（VRM読み込み、背景、表情キー、小物を掴む／離す、スクショ、VRMA の記録→再生、吹き出し、座りポーズ、カメラ映像（写真）からの推定、エラーなし）
+- 個別のテスト（このセッションで実施）：VRM 0.x と 1.0 の間で、骨の値が一致することの往復確認。ブリッジ経由の VMC・VRChat・VMC受信・OBSビューアのデータ。MP4 録画（声・BGM入り）。透明スクショ。自分のVRMの保存と復元。IndexedDB。小窓。iPhone 幅のレイアウト（横のはみ出しなし）
+- 追加機能の処理時間：1コマ約0.2ms
 
-後半に追加したもの：天気・カメラ追従・ポーズ固定（Space）・MP4録画・い/えの口・VMC受信（`bridge.py --vmc-in`、`applyVmcIn`）・体の当たり判定とリフティング（物理は1/120秒刻み）・魔法の杖・動画背景・紙吹雪と拍手・座りポーズと椅子・机・持ち替え・レーザーポインター・マウス目線・待機ゆらゆら・クリック反応・効果音（WebAudio合成）・透明スクショ・設定の保存/読込・起動用 .bat/.command・VRChatの表情パラメータとジャンプ・**OBS用ビューア**（`?viewer`。ブリッジが送る側の `frame` を viewer に中継する）。
+### 開発環境では確かめられないこと（利用者の実機で確認が必要）
+優先度の高い順です。
+1. **Unity実機**：`native/README.md` の「5. 動作確認チェックリスト」（13項目）。とくに骨の向き・左右
+2. **外部アプリ**：VSeeFace / Warudo（VMC。骨の回転の向き）、VRChat（トラッカーは VR モードのみ、チャットボックス、表情パラメータ、ジャンプ）、mocopi・iPhone アプリからの VMC 受信、**OBS のブラウザソース**（透過表示）
+3. **実際の手の動き**：掴む・離す・持ち替え、拍手、ピース、グッド、指差し、リフティング（テストでは握り具合などの値を直接与えた）
+4. **Windows の起動ファイル**（.bat）。Mac 用は、この環境で起動まで確認済み
+5. 速さ（GPU のある PC・スマホ）、マイク口パク（偽デバイスのビープ音で反応だけ確認）、音声認識（確認ダイアログまで）
+6. アクセサリーの位置（4体で確認済み。ずれるモデルがあれば `measureHead` を調整）、表情の感度・無表情の記憶の効き具合
 
-コードの場所：`index.html` の「Extras」区画（`extrasBeforeUpdate` = 表情・再生・体の位置、`extrasAfterUpdate` = エフェクト・吹き出し・小物・ブリッジ送信・記録、`beforeRender`/`afterRender` = カメラ揺れ）。`window.__mocap` にテスト用の入口がある。
+## 8. 開発のしかた（AIセッション向けメモ）
 
-### 残り（どれも利用者の実機での確認が必要）
-1. **PC版をUnity実機で動かす**：`native/README.md` の「5. 動作確認チェックリスト」（13項目）の結果をもらって直す
-2. **外部連携を実アプリで確認**：VSeeFace / Warudo（VMC）と VRChat（OSCトラッカーはVRモードのみ有効、チャットボックス）。とくにVMCの骨の回転の向き（正規化ボーンのローカル回転を左手系に変換して送っている）
-3. 手が顔に重なったときの対策の効き具合、「ぷるぷる」の好み、スマホでの重さ
-4. 指差し（人差し指だけ伸ばす）・拍手の判定（両手の距離 9cm 未満・近づく速さ 0.8m/s 以上）と、小物を掴む判定（握り具合 `grip` のしきい値 0.6 / 0.35、届く距離 9cm）が実際の手で使いやすいか
-5. アクセサリーの位置（レイで頭を測る方式。4体で確認済み。ほかのモデルでずれたら `measureHead` を調整）
-
-### 開発環境で確かめられないこと
-- 速さ（GPUがない）、実カメラでの手の握り（テストでは `grip` の値を直接与えた）、マイク（Chromeの偽デバイスのビープ音で反応だけ確認）、音声認識（確認ダイアログまで）
-
-## 6. 開発のしかた（AIセッション向けメモ）
-
-- このリポジトリの `index.html` がWeb版の本体です。編集して main に push すれば、1〜2分で GitHub Pages に反映されます
-- **GitHub Pages の公開設定**などの「一般公開する操作」は、安全確認でAIからは実行できません。利用者に画面の操作をお願いしてください
+- `index.html` を編集して main に push すれば、1〜2分で GitHub Pages に反映されます
+- **GitHub Pages の公開設定**などの「一般公開する操作」は、安全確認で AI からは実行できません。利用者に画面の操作をお願いしてください
+- push が「credential service temporarily unavailable（503）」で失敗することがありました。作業環境側の一時的な障害で、しばらく後の再送で通りました
 - クラウド環境の制限
-  - jsDelivr / unpkg / cdnjs / Arweave / opengameart.org / vroid.pixiv.help / hub.vroid.com には、AIの作業環境から接続できない
-  - raw.githubusercontent.com・npm・PyPI・storage.googleapis.com（MediaPipeのモデル）には接続できる
-- **Web版のテスト方法**（前回・今回のやり方）
-  1. Playwright の Chromium に `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=写真.y4m` を付けて起動し、人物写真をカメラ映像の代わりにする
-  2. CDN（jsDelivr）への通信は `page.route` で、npm で入れた three@0.170.0 / @pixiv/three-vrm@3.4.4 / @mediapipe/tasks-vision@0.10.21 のローカルファイルに差し替える
-  3. この環境はGPUがないので、推定は1〜8fpsしか出ない。速さの評価はできない（動作確認だけ）
-  4. 人物写真は `https://storage.googleapis.com/mediapipe-assets/pose.jpg`（全身）と `portrait.jpg`（上半身・正面）が使える
-  5. 描画が1秒に3〜4コマしか出ないので、「数百ms後に結果を見る」テストは早すぎて失敗しやすい。結果が出るまで待つ形で書く（Playwright の `waitForFunction` に async 関数を渡すと Promise が真と判定されて待たないので注意）
-  6. VRMA は `gltf-validator`（npm）で検証できる。three-vrm-animation@3.4.4 で読み戻して確認した
-- **PC版トラッカーのテスト**：Linux では `libegl1 libgles2 libgl1` が必要です（`apt-get install`）。`python tracker.py --video test.mp4 --frames 40 --print` で、カメラなしでも試せます
-- **Unityスクリプトのコンパイル確認**：mono-mcs と UnityEngine/UniVRM10 の簡易スタブで `mcs -langversion:Latest` を通しています（スタブはリポジトリには入っていません）
+  - jsDelivr / unpkg / cdnjs / Arweave / hub.vroid.com などには接続できない
+  - raw.githubusercontent.com・npm・PyPI・storage.googleapis.com（MediaPipe のモデルとテスト用写真）には接続できる。公開リポジトリ（例：vrm-c/UniVRM）は clone できる
+- **テスト**：`tools/README.md` を参照
+  - 描画は1秒に3〜5コマしか出ません。決まった時間だけ待つテストは失敗しやすいので、結果が出るまで待つ形で書きます
+  - Playwright の `waitForFunction` に async 関数を渡すと、Promise が「真」と判定されて待ちません
+  - 折りたたまれている欄の中の要素はクリックできません。テストでは `.sec.closed` を外してから操作します
+  - チェックボックスをクリックした直後は、キー入力が入力欄に向いていて、ページのキー操作が無視されます。先に3D画面をクリックします
+- **PC版トラッカーのテスト**：Linux では `libegl1 libgles2 libgl1` が必要です。`python tracker.py --video test.mp4 --frames 40 --print` で、カメラなしでも試せます
+- **Unity のコンパイル確認**：`tools/unity-stubs/check.sh`。UniVRM の API を新しく使うときは、`Stubs.cs` にも足します（UniVRM の実際のソースで名前を確かめること）
 
-## 7. これまでの判断の経緯（要点）
+### つまずいた点（同じ失敗をしないために）
+- **three.js の AnimationMixer は、値が前のコマから変わったときしか書き込まない**。そのため、動かない骨や一定の表情が、追跡の処理に上書きされた。VRMA の再生では、トラックを毎コマ自分で評価して書き込む方式にした
+- **`let` / `const` は、宣言より前に読むとエラーになり、`typeof` で確かめても同じ**。起動時に呼ばれる関数（`resize` など）が使う変数は、前のほうで宣言する
+- **重い環境では、タイマーや「処理した時刻」が遅れる**。長押しやドラッグの速さは、操作の時刻（`e.timeStamp`）で判定する
+- `$()` は id で探した要素を覚えておく（毎コマ何十回も呼ぶため）。id の要素は作り直さない前提
+- 小物の物理は、1/120秒刻みで計算しないとすり抜ける
+- エフェクトや吹き出しの位置は、頭の骨からの固定の距離ではなく、`measureHead` で測った値を使う（頭の骨は首の付け根あたりにあり、頭の大きさもモデルごとに違う）
+- VRoid の目の骨は見た目の目より内側にあるので、目の骨の間隔はメガネの大きさにだけ使う
+
+## 9. これまでの判断の経緯（要点）
 
 - 推定と描画を分けて並列化したことで、描画は止まらなくなった
 - 体のモデルは lite に下げたら精度が落ちたと言われたので、「標準」は full に戻した
-- 「Webをやめるべきか」について：重さの大部分はAIの計算そのものなので、PCアプリにしても劇的には速くならない、と説明済み。それでも利用者はUnity版を希望したので、Web版を残したまま `native/` に追加した
+- 「Web をやめるべきか」について：重さの大部分は AI の計算そのものなので、PC アプリにしても劇的には速くならない、と説明済み。それでも利用者は Unity 版を希望したので、Web版を残したまま `native/` に追加した
+- ブラウザは UDP（VRChat などが使う通信）を送れないので、外部連携は Python の中継プログラム（bridge.py）を挟む形にした。追加のインストールが要らないよう、標準ライブラリだけで書いた
+- 小物の掴み判定は「握った瞬間」だけにした（握りっぱなしの手を近づけただけで、勝手に掴まないように）
+- エフェクトは、カメラが笑顔を見たときではなく、表情ボタンやピースのときだけ出すようにした（自然に笑うたびにハートが出るとうるさいため）
+
+## 10. 次にやるとよいこと（案）
+
+- 利用者の実機確認（上の7の順番）の結果をもらって直すのが最優先
+- Unity 版に、Web版の配信機能（背景・表情ボタンなど）をどこまで移すか、利用者と相談する
+- `index.html` が大きくなったので、機能ごとに別ファイル（ES モジュール）に分ける。ただし「1ファイルで開ける」手軽さとの兼ね合いを利用者に確認する
+- VRChat の顔トラッキング用パラメータ（VRCFaceTracking 形式）に、表情52種を送る。パラメータ名の仕様の確認が必要
