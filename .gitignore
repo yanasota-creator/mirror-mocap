@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 node_modules/
 native/bridge/bridge-code.txt
+tools/webtest/page.lint.mjs

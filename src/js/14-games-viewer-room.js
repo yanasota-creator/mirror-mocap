@@ -325,7 +325,6 @@ function buildRoom() {
   const g = new THREE.Group(), M = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...e });
   const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.receiveShadow = true; o.castShadow = true; g.add(o); return o; };
   // floor (wood planks), back wall, a side wall
-  const floorM = M(0x9b7652, { roughness: 0.7 });
   for (let i = 0; i < 10; i++) box(0.5, 0.02, 5, M(i % 2 ? 0x9b7652 : 0x8f6c4a, { roughness: 0.7 }), -2.25 + i * 0.5, -0.01, 0.3);
   box(5, 3, 0.1, M(0xe9e1d6), 0, 1.5, -1.6);             // back wall
   box(0.1, 3, 4, M(0xdfd5c8), -2.5, 1.5, 0.3);           // left wall

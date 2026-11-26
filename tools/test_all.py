@@ -6,7 +6,7 @@
     python3 tools/test_all.py --cam cam.y4m   also check tracking from a fake camera video
 
 1. index.html is built from src/ and the library fingerprints (SRI) match   (tools/build.py --check)
-2. the page's script has no syntax errors                                    (node --check)
+2. the page's script has no syntax errors and passes the code check         (node --check, ESLint)
 3. the PC bridge                                                             (tools/test_bridge.py)
 4. the web page in a real browser                                            (tools/webtest/smoke.js)
 """
@@ -44,14 +44,22 @@ def syntax_check():
     with tempfile.TemporaryDirectory() as d:
         f = Path(d) / 'page.mjs'
         f.write_text(m.group(1), encoding='utf-8')
-        return run('2. スクリプトの文法', ['node', '--check', str(f)])
+        ok = run('2. スクリプトの文法', ['node', '--check', str(f)])
+    web = ROOT / 'tools' / 'webtest'
+    if ok and (web / 'node_modules' / '.bin').exists():
+        (web / 'page.lint.mjs').write_text(m.group(1), encoding='utf-8')
+        try:
+            ok = run('2. コード点検（ESLint）', ['node', str(web / 'node_modules' / 'eslint' / 'bin' / 'eslint.js'), 'page.lint.mjs'], cwd=web)
+        finally:
+            (web / 'page.lint.mjs').unlink(missing_ok=True)
+    return ok
 
 
 def main():
     args = sys.argv[1:]
     results = {
         '1. 組み立て・SRI': run('1. 組み立て・SRI', [PY, 'tools/build.py', '--check']),
-        '2. スクリプトの文法': syntax_check(),
+        '2. 文法・コード点検': syntax_check(),
         '3. PCブリッジ': run('3. PCブリッジ', [PY, 'tools/test_bridge.py']),
     }
     if '--quick' not in args:

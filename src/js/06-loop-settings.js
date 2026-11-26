@@ -51,7 +51,6 @@ $('#optJiggle').oninput = () => { $('#jiggleOut').textContent = $('#optJiggle').
 
 const partStat = { body: {}, face: {}, hands: {} }; // ms (EMA), gap between results (EMA), count, delegate
 const latest = { body: null, face: null, hands: null };
-let frameNo = 0;
 let vframe = 0, lastPumpVT = -1;
 function pump() {
   if (!running || !engine || !avatar || video.readyState < 2) return;
