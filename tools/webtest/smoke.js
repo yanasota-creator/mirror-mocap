@@ -127,17 +127,19 @@ function serve() {
   });
   await check('うなずくと「うんうん」、首を振ると「ううん」と判定', async () => {
     await page.click('label:has(#optNod)');
-    const feedTurn = (axis) => ev((axis) => { clearInterval(window.__f); const t0 = performance.now();
-      window.__f = setInterval(() => { const a = 14 * Math.sin((performance.now() - t0) / 1000 * Math.PI * 2 / 0.7); window.__mocap.testFace({}, axis === 'pitch' ? a : 0, axis === 'yaw' ? a : 0); }, 70); }, axis);
-    await feedTurn('pitch');
-    const nodOk = await until(() => window.__mocap.nod.count.nod > 0, 15000);
+    // 1.5 s of face results at 20 per second, with their own times: the same on a fast or a very slow machine
+    const turn = (axis, ahead) => ev(([axis, ahead]) => { const m = window.__mocap, t0 = performance.now() / 1000 + ahead;
+      for (let k = 0; k < 30; k++) { const t = t0 + k * 0.05, a = 14 * Math.sin(t * Math.PI * 2 / 0.7); m.testFace({}, axis === 'pitch' ? a : 0, axis === 'yaw' ? a : 0, t); m.stepNod(t); }
+      return m.nod.count; }, [axis, ahead]);
+    await turn('pitch', 5);
+    const nodOk = await ev(() => window.__mocap.nod.count.nod > 0);
     await ev(() => { window.__mocap.nod.coolUntil = 0; });
-    await feedTurn('yaw');
-    const shakeOk = await until(() => window.__mocap.nod.count.shake > 0, 15000);
+    await turn('yaw', 10);
+    const shakeOk = await ev(() => window.__mocap.nod.count.shake > 0);
     if (!nodOk || !shakeOk) console.log('nod debug:', nodOk, shakeOk, await ev(() => { const m = window.__mocap; return JSON.stringify({ count: m.nod.count, n: m.nod.hist.length,
       hist: m.nod.hist.map(h => [+(h.t % 100).toFixed(2), +h.pitch.toFixed(1), +h.yaw.toFixed(1)]), seen: performance.now() / 1000 - m.seen.face, checked: document.getElementById('optNod').checked, frozen: m.frozen }); }));
-    await stopFace(); await page.click('label:has(#optNod)');
-    return nodOk && shakeOk && await ev(() => window.__mocap.nod.count.nod >= 1);
+    await page.click('label:has(#optNod)');
+    return nodOk && shakeOk && await ev(() => window.__mocap.nod.count.nod === 1);
   });
   await check('表情メーターに12本の棒が出て値が動く', async () => {
     await page.click('label:has(#optMeter)');
