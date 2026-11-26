@@ -4,6 +4,7 @@
 
 | 道具 | 中身 | 使い方 |
 |---|---|---|
+| `build.py` | `src/` のファイルをつなぎ合わせて `index.html` を作る（Python の標準機能だけ） | `python3 tools/build.py`（`--check` で、組み立て済みかどうかだけ確認） |
 | `webtest/smoke.js` | Web版をブラウザ（Playwright の Chromium）で自動操作して、主な機能を確かめるテスト。結果を ○／× で出す | 下の「Web版のテスト」 |
 | `unity-stubs/` | Unity がなくても `MirrorMocapReceiver.cs` のコンパイルを確かめるための、Unity と UniVRM の簡易部品（スタブ） | `tools/unity-stubs/check.sh`（`mono-mcs` が必要） |
 | `osc_log.py` | VRChat や VSeeFace の代わりに、届いた OSC を表示する受信テスト用プログラム | `python3 tools/osc_log.py native/bridge 30 9000`（30秒、ポート9000） |

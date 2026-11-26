@@ -222,6 +222,7 @@ function extrasAfterUpdate(dt, now) {
   stepGood(now);
   stepWeather(dt, now);
   stepFx(dt, now);
+  stepFaceExtras(dt, now);
   stepBubble(now);
   updateHands(dt, now);
   stepProps(dt);

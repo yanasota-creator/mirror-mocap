@@ -153,6 +153,8 @@
             <tr><td><kbd>F</kbd></td><td>配信モードの切り替え（<kbd>Esc</kbd> でも戻る）</td></tr>
             <tr><td><kbd>P</kbd></td><td>スクリーンショット</td></tr>
             <tr><td><kbd>Space</kbd></td><td>ポーズを固定／解除（スクショ用）</td></tr>
+            <tr><td><kbd>H</kbd></td><td>表情を固定／解除（体は動き続けます）</td></tr>
+            <tr><td><kbd>B</kbd></td><td>頬染めの切り替え（オフ → 自動 → いつも）</td></tr>
             <tr><td>右ドラッグ</td><td>カメラを平行移動（アバターを画面の端に寄せる）</td></tr>
             <tr><td>ホイール</td><td>ズーム</td></tr>
           </table>
@@ -275,6 +277,13 @@
           <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
         </div>
         <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <button type="button" class="btn" id="exprLockBtn" aria-pressed="false">表情を固定<kbd>H</kbd></button>
+        <label for="optBlush">頬染め<kbd>B</kbd></label>
+        <select id="optBlush">
+          <option value="off">オフ</option>
+          <option value="auto" selected>自動（満面の笑み・両手で顔を隠す・頭を撫でる）</option>
+          <option value="on">いつも</option>
+        </select>
         <div id="customExprWrap" hidden>
           <label>このモデル独自の表情</label>
           <div class="grid3" id="customExpr"></div>
@@ -283,6 +292,9 @@
         <label class="toggle"><span>グッド👍で「GOOD!」<small>親指を立てると、手の上にマークが出ます</small></span><input type="checkbox" id="optGood" checked></label>
         <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
         <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
+        <label class="toggle"><span>うなずき・首振りに文字<small>うなずくと「うんうん」、首を横に振ると「ううん」が頭の横に出ます</small></span><input type="checkbox" id="optNod"></label>
+        <label class="toggle"><span>表情メーター<small>今どの表情がどれくらい出ているかを表示します。感度を合わせるときの目安に</small></span><input type="checkbox" id="optMeter"></label>
+        <div class="meter" id="exprMeter" hidden></div>
         <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
         <label class="toggle"><span>目線がマウスを追う<small>顔が映っていないとき、マウスの方を見ます（小窓のマスコットにも）</small></span><input type="checkbox" id="optMouseGaze" checked></label>
         <label class="toggle"><span>クリックで反応<small>頭をクリックすると喜び、体をクリックすると驚きます</small></span><input type="checkbox" id="optPoke" checked></label>
@@ -372,6 +384,7 @@
 <!-- @include js/13-ownvrm-pip-weather-vmcin.js -->
 <!-- @include js/14-games-viewer-room.js -->
 <!-- @include js/15-export-bridge-recording.js -->
+<!-- @include js/16-face-extras.js -->
 <!-- @include js/99-boot.js -->
 </script>
 </body>

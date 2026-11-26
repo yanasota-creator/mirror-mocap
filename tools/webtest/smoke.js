@@ -89,6 +89,44 @@ const cam = process.argv[2];
     const ok = await until(() => { const em = window.__mocap.avatar.vrm.expressionManager; return Math.max(em.getValue('blinkLeft'), em.getValue('blinkRight')) > 0.8 && Math.min(em.getValue('blinkLeft'), em.getValue('blinkRight')) < 0.15; });
     await stopFace(); return ok;
   });
+  await check('表情を固定（H）すると顔の入力が変わっても表情が変わらない', async () => {
+    await feedFace({ jawOpen: 0.8 });
+    const open = await until(() => window.__mocap.avatar.vrm.expressionManager.getValue('aa') > 0.6);
+    await page.mouse.click(30, 700); await page.keyboard.press('h');
+    await feedFace({});
+    await page.waitForTimeout(1500);
+    const kept = await exprVal('aa') > 0.6 && await ev(() => window.__mocap.exprLocked);
+    await page.keyboard.press('h');
+    const back = await until(() => window.__mocap.avatar.vrm.expressionManager.getValue('aa') < 0.1);
+    await stopFace(); return open && kept && back;
+  });
+  await check('頬染め：自動では頭を撫でると、「いつも」では常に出る', async () => {
+    await ev(() => { const m = window.__mocap; m.reaction.kind = 'happy'; m.reaction.t = performance.now() / 1000; });
+    const auto = await until(() => window.__mocap.blush.amount > 0.5 && window.__mocap.blush.group?.children[0]?.visible);
+    await page.selectOption('#optBlush', 'off');
+    const off = await until(() => window.__mocap.blush.amount < 0.05);
+    await page.selectOption('#optBlush', 'on');
+    const on = await until(() => window.__mocap.blush.amount > 0.9);
+    await page.selectOption('#optBlush', 'auto'); return auto && off && on;
+  });
+  await check('うなずくと「うんうん」、首を振ると「ううん」と判定', async () => {
+    await page.click('label:has(#optNod)');
+    const feedTurn = (axis) => ev((axis) => { clearInterval(window.__f); const t0 = performance.now();
+      window.__f = setInterval(() => { const a = 14 * Math.sin((performance.now() - t0) / 1000 * Math.PI * 2 / 0.7); window.__mocap.testFace({}, axis === 'pitch' ? a : 0, axis === 'yaw' ? a : 0); }, 70); }, axis);
+    await feedTurn('pitch');
+    const nodOk = await until(() => window.__mocap.nod.count.nod > 0, 15000);
+    await ev(() => { window.__mocap.nod.coolUntil = 0; });
+    await feedTurn('yaw');
+    const shakeOk = await until(() => window.__mocap.nod.count.shake > 0, 15000);
+    await stopFace(); await page.click('label:has(#optNod)');
+    return nodOk && shakeOk && await ev(() => window.__mocap.nod.count.nod >= 1);
+  });
+  await check('表情メーターに12本の棒が出て値が動く', async () => {
+    await page.click('label:has(#optMeter)');
+    await feedFace({ jawOpen: 0.8 });
+    const ok = await until(() => { const bars = document.querySelectorAll('#exprMeter i'); return bars.length === 12 && [...bars].some(i => parseInt(i.firstChild.style.width) > 50); });
+    await stopFace(); await page.click('label:has(#optMeter)'); return ok;
+  });
   await check('パーフェクトシンク対応モデルは52種の表情で動く', async () => {
     // give the loaded model empty shapes under the 52 ARKit names, as a perfect-sync model would have
     await ev(() => { const m = window.__mocap, em = m.avatar.vrm.expressionManager, C = em.getExpression('happy').constructor;

@@ -156,6 +156,7 @@ function solveHand(s, world, t, alpha) {
 /* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
    Find hand points (hand AI, or the body AI's wrist/finger points) over the face, near the mouth, near the eyes. */
 let faceHeld = -1e9, jumpRejects = 0;
+let exprLocked = false, lastOcc = { face: false, t: -1e9 }; // 表情を固定 (H) / hands over the face, as last seen
 let faceNeutral = {}, lastBlend = null; // blendshape scores of your relaxed face (set at 正面リセット)
 function handPointsNorm() {
   const pts = [];
@@ -306,7 +307,7 @@ function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: fal
   if (ps) for (const k in ps) if (/^(mouth|jaw|cheek|tongue)/.test(k)) MOUTH.push(ps[k]);
   if (occ.mouth || occ.face) for (const k of MOUTH) delete target[k];
   if (occ.eyes) { delete target.blinkLeft; delete target.blinkRight; if (ps) for (const k in ps) if (/^eye/.test(k)) delete target[ps[k]]; }
-  for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
+  if (!exprLocked) for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
   avatar.expr(exprState);
   if (occ.eyes || occ.face) return;
 
@@ -340,7 +341,7 @@ function idle(dt, now) {
     relax('neck', a); relax('head', a);
     const hd = $('#optIdleSway').checked && avatar.bone('head');
     if (hd) hd.quaternion.multiply(_tmp.setFromAxisAngle(new V3(0, 0, 1), Math.sin(now * 0.5 + 1) * 0.06 * a)).multiply(_tmp.setFromAxisAngle(UP, Math.sin(now * 0.33) * 0.08 * a));
-    for (const k in exprState) exprState[k] *= 1 - a;
+    if (!exprLocked) for (const k in exprState) exprState[k] *= 1 - a;
     avatar.expr(exprState);
     avatar.look(0, 0);
   }

@@ -189,7 +189,9 @@ function measureHead(wrap) {
   // hair surface straight below a point (capped, so a big ribbon or hat doesn't lift things into the air)
   const cap = eyeY + 0.2 * k;
   const surfaceAt = (x, z) => { const h = hit(new V3(x, 1, z), new V3(0, -1, 0)); return h ? Math.min(h.y, cap) : eyeY + 0.15 * k; };
-  return { kE, k, eyeY, top, faceZ, surfaceAt };
+  // face surface straight in front of a point (cheeks for the blush)
+  const frontAt = (x, y) => { const h = hit(new V3(x, y, 1), new V3(0, 0, -1)); return h ? h.z : null; };
+  return { kE, k, eyeY, top, faceZ, surfaceAt, frontAt };
 }
 
 /* ---- head accessories ---- */

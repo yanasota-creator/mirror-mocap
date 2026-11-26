@@ -155,6 +155,9 @@ body.stream .main { grid-template-columns: 1fr; }
 input.text { width: 100%; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .chat input { flex: 1; min-width: 0; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .status { font-size: 12px; color: var(--muted); margin: 0; }
+.meter { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.meter i { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.meter i b { display: block; height: 100%; width: 0; background: var(--accent); }
 .status.ok { color: var(--ok); }
 .status.bad { color: var(--warn); }
 /* collapsible panel sections */
@@ -354,6 +357,8 @@ body.stream .stage { height: 100%; min-height: 0; }
             <tr><td><kbd>F</kbd></td><td>配信モードの切り替え（<kbd>Esc</kbd> でも戻る）</td></tr>
             <tr><td><kbd>P</kbd></td><td>スクリーンショット</td></tr>
             <tr><td><kbd>Space</kbd></td><td>ポーズを固定／解除（スクショ用）</td></tr>
+            <tr><td><kbd>H</kbd></td><td>表情を固定／解除（体は動き続けます）</td></tr>
+            <tr><td><kbd>B</kbd></td><td>頬染めの切り替え（オフ → 自動 → いつも）</td></tr>
             <tr><td>右ドラッグ</td><td>カメラを平行移動（アバターを画面の端に寄せる）</td></tr>
             <tr><td>ホイール</td><td>ズーム</td></tr>
           </table>
@@ -476,6 +481,13 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
         </div>
         <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <button type="button" class="btn" id="exprLockBtn" aria-pressed="false">表情を固定<kbd>H</kbd></button>
+        <label for="optBlush">頬染め<kbd>B</kbd></label>
+        <select id="optBlush">
+          <option value="off">オフ</option>
+          <option value="auto" selected>自動（満面の笑み・両手で顔を隠す・頭を撫でる）</option>
+          <option value="on">いつも</option>
+        </select>
         <div id="customExprWrap" hidden>
           <label>このモデル独自の表情</label>
           <div class="grid3" id="customExpr"></div>
@@ -484,6 +496,9 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>グッド👍で「GOOD!」<small>親指を立てると、手の上にマークが出ます</small></span><input type="checkbox" id="optGood" checked></label>
         <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
         <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
+        <label class="toggle"><span>うなずき・首振りに文字<small>うなずくと「うんうん」、首を横に振ると「ううん」が頭の横に出ます</small></span><input type="checkbox" id="optNod"></label>
+        <label class="toggle"><span>表情メーター<small>今どの表情がどれくらい出ているかを表示します。感度を合わせるときの目安に</small></span><input type="checkbox" id="optMeter"></label>
+        <div class="meter" id="exprMeter" hidden></div>
         <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
         <label class="toggle"><span>目線がマウスを追う<small>顔が映っていないとき、マウスの方を見ます（小窓のマスコットにも）</small></span><input type="checkbox" id="optMouseGaze" checked></label>
         <label class="toggle"><span>クリックで反応<small>頭をクリックすると喜び、体をクリックすると驚きます</small></span><input type="checkbox" id="optPoke" checked></label>
@@ -1048,6 +1063,7 @@ function solveHand(s, world, t, alpha) {
 /* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
    Find hand points (hand AI, or the body AI's wrist/finger points) over the face, near the mouth, near the eyes. */
 let faceHeld = -1e9, jumpRejects = 0;
+let exprLocked = false, lastOcc = { face: false, t: -1e9 }; // 表情を固定 (H) / hands over the face, as last seen
 let faceNeutral = {}, lastBlend = null; // blendshape scores of your relaxed face (set at 正面リセット)
 function handPointsNorm() {
   const pts = [];
@@ -1198,7 +1214,7 @@ function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: fal
   if (ps) for (const k in ps) if (/^(mouth|jaw|cheek|tongue)/.test(k)) MOUTH.push(ps[k]);
   if (occ.mouth || occ.face) for (const k of MOUTH) delete target[k];
   if (occ.eyes) { delete target.blinkLeft; delete target.blinkRight; if (ps) for (const k in ps) if (/^eye/.test(k)) delete target[ps[k]]; }
-  for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
+  if (!exprLocked) for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
   avatar.expr(exprState);
   if (occ.eyes || occ.face) return;
 
@@ -1232,7 +1248,7 @@ function idle(dt, now) {
     relax('neck', a); relax('head', a);
     const hd = $('#optIdleSway').checked && avatar.bone('head');
     if (hd) hd.quaternion.multiply(_tmp.setFromAxisAngle(new V3(0, 0, 1), Math.sin(now * 0.5 + 1) * 0.06 * a)).multiply(_tmp.setFromAxisAngle(UP, Math.sin(now * 0.33) * 0.08 * a));
-    for (const k in exprState) exprState[k] *= 1 - a;
+    if (!exprLocked) for (const k in exprState) exprState[k] *= 1 - a;
     avatar.expr(exprState);
     avatar.look(0, 0);
   }
@@ -1691,6 +1707,7 @@ function onPart(p, res, t, vw, vh) {
       const occ = faceOcclusion(res.faceLandmarks[0], vw / vh || 16 / 9);
       held = occ.face || occ.mouth || occ.eyes;
       if (occ.face) faceHeld = t;
+      lastOcc = { ...occ, t, hands: latest.hands?.landmarks?.length ?? 0 };
       seen.face = t;
       solveFace(res.faceLandmarks[0], res.faceBlendshapes?.[0]?.categories ?? [], t, alpha, vw, vh, occ);
     } else {
@@ -1837,7 +1854,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol', 'optEmotion', 'optEmotionGain', 'optPerfectSync'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol', 'optEmotion', 'optEmotionGain', 'optPerfectSync', 'optBlush', 'optNod', 'optMeter'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1992,6 +2009,8 @@ addEventListener('keydown', (e) => {
   else if (e.key === 'p' || e.key === 'P') $('#shotBtn').click();
   else if (e.key === 'c' || e.key === 'C') $('#calibBtn').click();
   else if (e.key === ' ') { e.preventDefault(); setFrozen(!frozen); }
+  else if (e.key === 'h' || e.key === 'H') setExprLock(!exprLocked);
+  else if (e.key === 'b' || e.key === 'B') cycleBlush();
 });
 
 /* ---- microphone lip sync (local only: the sound is analysed and discarded) ---- */
@@ -2252,7 +2271,9 @@ function measureHead(wrap) {
   // hair surface straight below a point (capped, so a big ribbon or hat doesn't lift things into the air)
   const cap = eyeY + 0.2 * k;
   const surfaceAt = (x, z) => { const h = hit(new V3(x, 1, z), new V3(0, -1, 0)); return h ? Math.min(h.y, cap) : eyeY + 0.15 * k; };
-  return { kE, k, eyeY, top, faceZ, surfaceAt };
+  // face surface straight in front of a point (cheeks for the blush)
+  const frontAt = (x, y) => { const h = hit(new V3(x, y, 1), new V3(0, 0, -1)); return h ? h.z : null; };
+  return { kE, k, eyeY, top, faceZ, surfaceAt, frontAt };
 }
 
 /* ---- head accessories ---- */
@@ -3492,6 +3513,7 @@ function extrasAfterUpdate(dt, now) {
   stepGood(now);
   stepWeather(dt, now);
   stepFx(dt, now);
+  stepFaceExtras(dt, now);
   stepBubble(now);
   updateHands(dt, now);
   stepProps(dt);
@@ -3499,6 +3521,157 @@ function extrasAfterUpdate(dt, now) {
   bvhCapture(now);
 }
 
+/* ================================================================
+   Extras: face — expression lock (H), blush (B), nod / head-shake text, expression meter
+   ================================================================ */
+// the head is measured once per model (shared by the blush and the nod text); the skinning is ready a moment after loading
+const faceX = { avatar: null, since: 0, head: null };
+function faceHead(now) {
+  if (faceX.avatar !== avatar) { faceX.avatar = avatar; faceX.since = now; faceX.head = null; }
+  if (!faceX.head && now - faceX.since > 0.5 && avatar?.bone('head')) { const w = headFrame(); faceX.head = measureHead(w); w.removeFromParent(); }
+  return faceX.head;
+}
+
+/* ---- expression lock: the face stays as it is, the body keeps moving ---- */
+function setExprLock(on) {
+  exprLocked = on;
+  $('#exprLockBtn').setAttribute('aria-pressed', String(on));
+  $('#exprLockBtn').firstChild.textContent = on ? '表情の固定を解除' : '表情を固定';
+}
+$('#exprLockBtn').onclick = () => setExprLock(!exprLocked);
+
+/* ---- blush on the cheeks ---- */
+const blush = { group: null, avatar: null, since: 0, amount: 0, smileT: -1e9, coverT: -1e9 };
+function blushTexture() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 80; const g = c.getContext('2d');
+  const grd = g.createRadialGradient(64, 40, 4, 64, 40, 60);
+  grd.addColorStop(0, 'rgba(255,110,140,0.85)'); grd.addColorStop(0.55, 'rgba(255,120,150,0.45)'); grd.addColorStop(1, 'rgba(255,130,160,0)');
+  g.save(); g.scale(1, 80 / 128); g.fillStyle = grd; g.fillRect(0, 0, 128, 128); g.restore();
+  // anime-style hatching over the pink
+  g.strokeStyle = 'rgba(255,70,110,0.75)'; g.lineWidth = 4; g.lineCap = 'round';
+  for (const x of [44, 60, 76]) { g.beginPath(); g.moveTo(x + 6, 28); g.lineTo(x - 4, 50); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function buildBlush() {
+  blush.group?.removeFromParent(); blush.group?.traverse(o => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose?.(); });
+  blush.group = null;
+  if (!avatar?.vrm || !avatar.bone('head')) return;
+  // measured here, in the frame the patches live in (the head keeps moving, so an earlier measurement would be off)
+  const wrap = headFrame(), { k, eyeY, faceZ, frontAt } = measureHead(wrap), tex = blushTexture();
+  // sized and placed by the head size, not the eye bones (VRoid's eye bones sit inside the visible eyes)
+  const w = 0.036 * k, h = 0.022 * k;
+  for (const sx of [1, -1]) {
+    const x = sx * 0.039 * k, y = eyeY - 0.036 * k;
+    // the cheek is curved: measure across the patch and use the middle value (one point may catch side hair);
+    // hits in front of the bridge of the nose are not the cheek
+    const zs = [[0, 0], [-w / 2, 0], [w / 2, 0], [0, h / 2], [0, -h / 2]].map(([dx, dy]) => frontAt(x + dx, y + dy)).filter(z => z != null && z < faceZ + 0.005 * k);
+    zs.sort((a, b) => a - b);
+    const z = (zs.length ? zs[zs.length >> 1] : faceZ - 0.01 * k) + 0.003 * k;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+    m.position.set(x, y, z); m.rotation.y = sx * 0.3; m.renderOrder = 2;
+    m.userData.measured = zs.length;
+    wrap.add(m);
+  }
+  blush.group = wrap;
+}
+function blushTarget(now) {
+  const mode = $('#optBlush').value;
+  if (mode === 'on') return 1;
+  if (mode === 'off') return 0;
+  // auto: a big smile held for a moment, both hands over the face, or being patted on the head
+  if ((extraExpr.happy ?? 0) > 0.85) { if (blush.smileT < 0) blush.smileT = now; } else blush.smileT = -1;
+  if (lastOcc.face && lastOcc.hands >= 2 && now - lastOcc.t < 0.5) blush.coverT = now;
+  let v = 0;
+  if (blush.smileT > 0 && now - blush.smileT > 0.8) v = 0.75;
+  if (now - blush.coverT < 2) v = 1;
+  if (reaction.kind === 'happy' && now - reaction.t < 2.2) v = 1;
+  return v;
+}
+function cycleBlush() {
+  const el = $('#optBlush'), order = ['off', 'auto', 'on'];
+  el.value = order[(order.indexOf(el.value) + 1) % 3];
+  toast('頬染め：' + el.options[el.selectedIndex].text.replace(/（.*）/, ''), '', 'info'); setTimeout(() => { $('#toast').hidden = true; }, 1500);
+  saveSettings();
+}
+function stepBlush(dt, now) {
+  const target = blushTarget(now);
+  blush.amount += (target - blush.amount) * (1 - Math.exp(-dt * (target > blush.amount ? 4 : 1.5)));
+  if (blush.amount < 0.01 && !blush.group) return;
+  if (blush.avatar !== avatar) { blush.avatar = avatar; blush.since = now; blush.group?.removeFromParent(); blush.group = null; }
+  if (!blush.group && avatar?.vrm && now - blush.since > 0.5) buildBlush(); // the skinning is ready a moment after loading
+  blush.group?.children.forEach(m => { m.material.opacity = blush.amount; m.visible = blush.amount > 0.01; });
+}
+
+/* ---- nod / head shake -> a little text by the head ---- */
+const nod = { hist: [], lastT: -1, coolUntil: 0, count: { nod: 0, shake: 0 } };
+// direction changes of a signal, ignoring wobbles smaller than th (degrees)
+function swings(vals, th = 5) {
+  let dir = 0, ext = vals[0], hi = vals[0], lo = vals[0], n = 0;
+  for (const v of vals) {
+    if (dir === 0) { // not moving yet: wait for the first move of more than th either way
+      hi = Math.max(hi, v); lo = Math.min(lo, v);
+      if (v > lo + th) { dir = 1; ext = v; } else if (v < hi - th) { dir = -1; ext = v; }
+    } else if (dir > 0) { if (v > ext) ext = v; else if (v < ext - th) { n++; dir = -1; ext = v; } }
+    else { if (v < ext) ext = v; else if (v > ext + th) { n++; dir = 1; ext = v; } }
+  }
+  return n;
+}
+const range = (a) => Math.max(...a) - Math.min(...a);
+function textTexture(str, color) {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  g.font = `bold ${Math.floor(220 / str.length)}px "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  g.lineWidth = 14; g.strokeStyle = '#fff'; g.strokeText(str, 128, 128);
+  g.fillStyle = color; g.fillText(str, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function stepNod(now) {
+  if (!$('#optNod').checked || frozen || !lastRaw.head || now - seen.face > 0.4) { nod.hist.length = 0; return; }
+  if (seen.face === nod.lastT) return; // only new face results
+  nod.lastT = seen.face;
+  const f = new V3(0, 0, 1).applyQuaternion(lastRaw.head);
+  const deg = THREE.MathUtils.RAD2DEG;
+  nod.hist.push({ t: seen.face, pitch: Math.atan2(-f.y, Math.hypot(f.x, f.z)) * deg, yaw: Math.atan2(f.x, f.z) * deg });
+  while (nod.hist.length && seen.face - nod.hist[0].t > 1.6) nod.hist.shift();
+  if (now < nod.coolUntil || nod.hist.length < 4) return;
+  const P = nod.hist.map(h => h.pitch), Y = nod.hist.map(h => h.yaw);
+  let kind = null;
+  if (swings(P) >= 2 && range(P) > range(Y) * 1.3) kind = 'nod';
+  else if (swings(Y) >= 2 && range(Y) > range(P) * 1.3) kind = 'shake';
+  if (!kind) return;
+  nod.count[kind]++; nod.coolUntil = now + 1.5; nod.hist.length = 0;
+  const h = faceHead(now); if (!h) return;
+  fxTex[kind] ??= textTexture(kind === 'nod' ? 'うんうん' : 'ううん', kind === 'nod' ? '#ff7a59' : '#4f8dff');
+  spawnFx(kind, new V3(0.15 * h.k, h.eyeY + 0.03 * h.k, 0.03), new V3(0, 0.05, 0), 1.3, 0.1 * h.k);
+  sfx(kind === 'nod' ? 'ding' : 'boing');
+}
+
+/* ---- expression meter ---- */
+const METER_BASE = [['blinkLeft', 'まばたき左'], ['blinkRight', 'まばたき右'], ['aa', 'あ'], ['ih', 'い'], ['ou', 'う'], ['ee', 'え'], ['oh', 'お'],
+  ['happy', '喜'], ['angry', '怒'], ['sad', '哀'], ['surprised', '驚'], ['relaxed', '穏']];
+const meter = { t: 0, keys: '' };
+function stepMeter(now) {
+  const box = $('#exprMeter'), on = $('#optMeter').checked;
+  box.hidden = !on;
+  if (!on || now - meter.t < 0.2 || !box.offsetParent) return;
+  meter.t = now;
+  // in perfect sync the basic shapes stay at 0: show the 12 strongest of the 52 instead
+  const ps = $('#optPerfectSync').checked ? perfectSyncMap() : null;
+  const rows = ps ? Object.values(ps).map(n => [n, n]).sort((a, b) => (extraExpr[b[0]] ?? 0) - (extraExpr[a[0]] ?? 0)).slice(0, 12) : METER_BASE;
+  const keys = rows.map(r => r[0]).join();
+  if (keys !== meter.keys) {
+    meter.keys = keys; box.textContent = '';
+    for (const [k, label] of rows) { const s = document.createElement('span'); s.textContent = label; const i = document.createElement('i'); i.dataset.k = k; i.append(document.createElement('b')); box.append(s, i); }
+  }
+  for (const i of box.querySelectorAll('i')) i.firstChild.style.width = Math.round(Math.min(1, Math.max(0, extraExpr[i.dataset.k] ?? 0)) * 100) + '%';
+}
+
+function stepFaceExtras(dt, now) {
+  stepBlush(dt, now);
+  stepNod(now);
+  stepMeter(now);
+}
 /* ---------------- Boot ---------------- */
 const savedModel = loadSettings();
 applyRenderQuality();
@@ -3514,13 +3687,18 @@ if (location.protocol === 'file:') {
 }
 window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, reaction, shrug, testPose(world, norm) { withTargets(() => solvePose(world, norm, performance.now() / 1000, 1)); seen.pose = performance.now() / 1000; }, viewer, VIEWER, get extrasMs() { return extrasMs; }, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   // feed blendshape scores as if the face AI had returned them (a front-facing face, nothing covering it)
-  testFace(scores) {
+  testFace(scores, pitch = 0, yaw = 0) {
     const lms = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
-    Object.assign(lms[33], { x: 0.45, y: 0.45 }); Object.assign(lms[263], { x: 0.55, y: 0.45 }); Object.assign(lms[10], { x: 0.5, y: 0.35 }); Object.assign(lms[152], { x: 0.5, y: 0.65 });
+    const p = pitch * Math.PI / 180, w = yaw * Math.PI / 180;
+    const put = (i, x, y) => { // a point on a flat face (x, y in pixels from the centre), turned by pitch then yaw
+      const y1 = y * Math.cos(p), z1 = y * Math.sin(p), x2 = x * Math.cos(w) + z1 * Math.sin(w), z2 = -x * Math.sin(w) + z1 * Math.cos(w);
+      Object.assign(lms[i], { x: 0.5 + x2 / 640, y: 0.5 + y1 / 480, z: z2 / 640 });
+    };
+    put(33, -32, -24); put(263, 32, -24); put(10, 0, -72); put(152, 0, 72);
     const t = performance.now() / 1000;
     solveFace(lms, Object.entries(scores).map(([categoryName, score]) => ({ categoryName, score })), t, 1, 640, 480); seen.face = t;
   },
-  perfectSyncMap, ARKIT, get blend() { return lastBlend; },
+  perfectSyncMap, ARKIT, Raycaster: THREE.Raycaster, blush, nod, swings, setExprLock, get exprLocked() { return exprLocked; }, get blend() { return lastBlend; },
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>

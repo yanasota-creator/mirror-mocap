@@ -104,6 +104,7 @@ function onPart(p, res, t, vw, vh) {
       const occ = faceOcclusion(res.faceLandmarks[0], vw / vh || 16 / 9);
       held = occ.face || occ.mouth || occ.eyes;
       if (occ.face) faceHeld = t;
+      lastOcc = { ...occ, t, hands: latest.hands?.landmarks?.length ?? 0 };
       seen.face = t;
       solveFace(res.faceLandmarks[0], res.faceBlendshapes?.[0]?.categories ?? [], t, alpha, vw, vh, occ);
     } else {
@@ -250,7 +251,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol', 'optEmotion', 'optEmotionGain', 'optPerfectSync'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol', 'optEmotion', 'optEmotionGain', 'optPerfectSync', 'optBlush', 'optNod', 'optMeter'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}

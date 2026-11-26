@@ -1,6 +1,6 @@
 # Mirror Mocap 引き継ぎ資料
 
-最終更新：2026-11-26（3回目のセッションの終わり）。次のセッション（人でもAIでも）が、ここから続きを始められるように書いています。
+最終更新：2026-11-26（4回目のセッション）。次のセッション（人でもAIでも）が、ここから続きを始められるように書いています。
 
 ---
 
@@ -10,7 +10,7 @@ PC内蔵カメラ1台（フルトラッキングなし）で、体・顔（表�
 
 | 部分 | 場所 | 状態 |
 |---|---|---|
-| **Web版**（本体） | `index.html`（1ファイル、約3400行） | 開発環境で自動テスト済み。公開中 |
+| **Web版**（本体） | `index.html`（1ファイル、約3700行）。**編集は `src/` で行い、`python3 tools/build.py` で組み立てる** | 開発環境で自動テスト済み。公開中 |
 | **PCブリッジ** | `native/bridge/bridge.py` | Web版 ⇄ VMC / VRChat OSC の中継。受信テスト用プログラムで形式は確認済み。**実アプリでは未確認** |
 | **PC版トラッカー** | `native/tracker/tracker.py` | Python ＋ MediaPipe。動画入力で送信まで確認済み |
 | **PC版 Unity** | `native/unity/Assets/MirrorMocap/MirrorMocapReceiver.cs` | UniVRM 0.131 のソースと照合し、スタブでのコンパイルだけ確認。**Unity実機では一度も動かしていない** |
@@ -36,15 +36,37 @@ PC内蔵カメラ1台（フルトラッキングなし）で、体・顔（表�
 ## 3. ファイルの構成
 
 ```
-index.html                 Web版の本体（HTML・CSS・JS がすべて入っている）
+index.html                 Web版の本体（HTML・CSS・JS がすべて入っている）。src/ から自動で作るので直接編集しない
+src/index.html             ページの骨組み。<!-- @include ファイル名 --> の行が、そのファイルの中身に置き換わる
+src/style.css              見た目（CSS）
+src/js/00〜99-*.js         スクリプトを元の順番のまま区切ったもの（下の「ファイル分割」）
 README.md                  利用者向けの説明（できること・開き方・コツ）
 HANDOFF.md                 この資料
 native/README.md           PC版・ブリッジ・外部連携の説明、Unity の動作確認チェックリスト
 native/tracker/            tracker.py, requirements.txt, start-windows.bat, start-mac.command
 native/bridge/             bridge.py（標準ライブラリだけ）, start-windows.bat, start-mac.command
 native/unity/Assets/MirrorMocap/MirrorMocapReceiver.cs
-tools/                     開発用（webtest/smoke.js, unity-stubs/, osc_log.py）
+tools/                     開発用（build.py, webtest/smoke.js, unity-stubs/, osc_log.py）
 ```
+
+### ファイル分割（4回目のセッション）
+- `src/js/` の各ファイルは、もともと1つだった `<script type="module">` を**順番を変えずに区切っただけ**です。全ファイルが同じ1つのスクリプトとしてつながるので、変数はファイルをまたいでそのまま使えます（import / export は不要）
+- 本格的な ES モジュールに分けなかった理由：(1) ファイルから直接開いたページ（file://）は別の JS ファイルを読めず、「index.html をダブルクリックで開く」使い方ができなくなる (2) 変数の共有が多く、書き換えが大きくて壊れやすい
+- 分割した直後に組み立てた index.html が、元のファイルと1文字も違わないことを確認済み
+- **ファイルの順番には意味があります**。`let` / `const` は宣言より前に読むとエラーになるので、新しいファイルを足すときは `src/index.html` の `@include` の行の位置に注意。新しい機能は `16-face-extras.js` のように、`99-boot.js` の前に足すのが安全です
+
+| ファイル | 中身 |
+|---|---|
+| `00-setup.js` | ライブラリの読み込み、AIモデルのURL、配布モデルの一覧 |
+| `01-ui-stage.js` | `$()`・`toast` など、three.js の舞台 |
+| `02-avatar.js` | 骨の名前、マネキン、VRM の読み込み、`setAvatar` |
+| `03-solver.js` | 関節の計算、One Euro、体・手・顔の推定結果→アバター（`solvePose` `solveHand` `solveFace`）、パーフェクトシンク、`idle` |
+| `04-mediapipe.js` | AI（Web Worker）の起動 |
+| `05-input.js` | カメラ・動画・VRMファイルの入力 |
+| `06-loop-settings.js` | 毎コマの処理（`tick`）、録画、画質、設定の保存（`SAVED_IDS`） |
+| `10`〜`15-*.js` | 追加機能（下の「5. 機能の地図」） |
+| `16-face-extras.js` | 表情の固定・頬染め・うなずき・表情メーター |
+| `99-boot.js` | 起動処理、テスト用の入口 `window.__mocap` |
 
 ## 4. Web版のしくみ（土台）
 
@@ -94,6 +116,13 @@ tools/                     開発用（webtest/smoke.js, unity-stubs/, osc_log.p
 | | ピース・グッド・指差し | `solveHand` の `grip.peaceAt` `grip[s+'GoodAt']` `grip[s+'PointAt']` | 指の伸び具合 `ext()` で判定 |
 | | エフェクト | `fxTexture` `spawnFx` `stepFx` | 表情ボタン等で「自分で出したとき」だけ出す |
 | | 自動まばたき・マウス目線・クリック反応 | `autoBlink` `mouseGazeTarget` `reaction` | |
+| | 喜怒哀驚（眉と目から） | `solveFace` の `MOOD`、`#optEmotion` `#optEmotionGain` | 笑うと目が細くなり、AIが「眉が下がった」とも判定するので、怒りは eyeSquint を引き、笑顔で打ち消す（笑顔の写真で確認） |
+| | ウインク | `solveFace` の `wink` | 片目だけはっきり閉じたときは、両目の連動を外す |
+| | パーフェクトシンク | `ARKIT` `perfectSyncMap` `showPerfectSyncStatus` | モデル独自の表情に ARKit 52種の名前が20個以上あれば対応とみなす（大文字小文字は無視）。オンのときは基本の口・まばたき・喜怒哀驚を0にする（二重に変形するため）。目線は今まで通り骨で動かす。52種は独自表情ボタンから除く |
+| | 表情の固定（H） | `exprLocked` `setExprLock` | カメラからの表情（`exprState`）だけ止める。表情ボタンは使える |
+| | 頬染め（B） | `blush` `buildBlush` `blushTarget` | 頭の大きさ基準で置き、頬の表面を5点測った中央値の少し手前。測定はその場で行う（頭は動くので、前に測った値を使うとずれた） |
+| | うなずき・首振り | `nod` `swings` `stepNod` | `lastRaw.head`（カメラから見た頭の向き）の上下・左右が、1.6秒以内に2回以上切り返したら。初期オフ |
+| | 表情メーター | `stepMeter` | パーフェクトシンク中は52種のうち強い12個を出す |
 | 動き | 体の位置（左右・前後・上下） | `bodyPos` `stepBodyPos` | 肩の中心と肩幅のピクセル値から。前後は「肩幅の見かけ」 |
 | | 肩をすくめる | `shrug`（`solvePose` 内） | 耳と肩の縦の距離 ÷ 肩幅 |
 | | 座りポーズ・椅子・机 | `sit` `isSitting` `legRest` `placeChair` `placeDesk` `desk.box` | 脚が1秒映らないと座る |
@@ -132,7 +161,9 @@ tools/                     開発用（webtest/smoke.js, unity-stubs/, osc_log.p
 ## 7. 確認できていること・いないこと
 
 ### 開発環境で確認済み
-- `tools/webtest/smoke.js` の10項目（VRM読み込み、背景、表情キー、小物を掴む／離す、スクショ、VRMA の記録→再生、吹き出し、座りポーズ、カメラ映像（写真）からの推定、エラーなし）
+- `tools/webtest/smoke.js` の17項目（VRM読み込み、背景、表情キー、小物を掴む／離す、スクショ、VRMA の記録→再生、吹き出し、座りポーズ、眉と目から怒り・驚き、ウインク、表情の固定、頬染め、うなずき・首振り、表情メーター、パーフェクトシンク、カメラ映像（写真）からの推定、エラーなし）。表情は `__mocap.testFace(表情の数値, 上下の角度, 左右の角度)` で、AIの結果の代わりに数値を与えている
+- パーフェクトシンクは対応モデルが手元にないので、テスト中に読み込んだモデルへ52種の空の表情を登録して確かめた
+- 頬染めの位置は配布モデル1体で正面・横から目で確認（ほかのモデルでずれたら `buildBlush` の係数を調整）
 - 個別のテスト（このセッションで実施）：VRM 0.x と 1.0 の間で、骨の値が一致することの往復確認。ブリッジ経由の VMC・VRChat・VMC受信・OBSビューアのデータ。MP4 録画（声・BGM入り）。透明スクショ。自分のVRMの保存と復元。IndexedDB。小窓。iPhone 幅のレイアウト（横のはみ出しなし）
 - 追加機能の処理時間：1コマ約0.2ms
 
@@ -143,11 +174,12 @@ tools/                     開発用（webtest/smoke.js, unity-stubs/, osc_log.p
 3. **実際の手の動き**：掴む・離す・持ち替え、拍手、ピース、グッド、指差し、リフティング（テストでは握り具合などの値を直接与えた）
 4. **Windows の起動ファイル**（.bat）。Mac 用は、この環境で起動まで確認済み
 5. 速さ（GPU のある PC・スマホ）、マイク口パク（偽デバイスのビープ音で反応だけ確認）、音声認識（確認ダイアログまで）
-6. アクセサリーの位置（4体で確認済み。ずれるモデルがあれば `measureHead` を調整）、表情の感度・無表情の記憶の効き具合
+6. **表情の再現（4回目で追加）**：実際の顔で、怒り・悲しみ・驚きが自然に出るか、考えごとをしているだけで怒り顔にならないか（感度の初期値の調整が必要かもしれない）。パーフェクトシンク対応モデルでの見た目。うなずきの判定の効き具合
+7. アクセサリーの位置（4体で確認済み。ずれるモデルがあれば `measureHead` を調整）、表情の感度・無表情の記憶の効き具合
 
 ## 8. 開発のしかた（AIセッション向けメモ）
 
-- `index.html` を編集して main に push すれば、1〜2分で GitHub Pages に反映されます
+- **`src/` を編集 → `python3 tools/build.py` → `index.html` と `src/` を両方 commit** → main に push すれば、1〜2分で GitHub Pages に反映されます。`index.html` を直接直すと、次の組み立てで消えます。`python3 tools/build.py --check` で組み立て忘れがないか確かめられます
 - **GitHub Pages の公開設定**などの「一般公開する操作」は、安全確認で AI からは実行できません。利用者に画面の操作をお願いしてください
 - push が「credential service temporarily unavailable（503）」で失敗することがありました。作業環境側の一時的な障害で、しばらく後の再送で通りました
 - クラウド環境の制限
@@ -183,5 +215,5 @@ tools/                     開発用（webtest/smoke.js, unity-stubs/, osc_log.p
 
 - 利用者の実機確認（上の7の順番）の結果をもらって直すのが最優先
 - Unity 版に、Web版の配信機能（背景・表情ボタンなど）をどこまで移すか、利用者と相談する
-- `index.html` が大きくなったので、機能ごとに別ファイル（ES モジュール）に分ける。ただし「1ファイルで開ける」手軽さとの兼ね合いを利用者に確認する
+- 表情の感度（喜怒哀驚のしきい値）を、利用者の実際の顔に合わせて調整する
 - VRChat の顔トラッキング用パラメータ（VRCFaceTracking 形式）に、表情52種を送る。パラメータ名の仕様の確認が必要

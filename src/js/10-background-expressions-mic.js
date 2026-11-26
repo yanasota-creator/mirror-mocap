@@ -116,6 +116,8 @@ addEventListener('keydown', (e) => {
   else if (e.key === 'p' || e.key === 'P') $('#shotBtn').click();
   else if (e.key === 'c' || e.key === 'C') $('#calibBtn').click();
   else if (e.key === ' ') { e.preventDefault(); setFrozen(!frozen); }
+  else if (e.key === 'h' || e.key === 'H') setExprLock(!exprLocked);
+  else if (e.key === 'b' || e.key === 'B') cycleBlush();
 });
 
 /* ---- microphone lip sync (local only: the sound is analysed and discarded) ---- */
