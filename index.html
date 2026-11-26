@@ -708,7 +708,9 @@ for (const s of SIDES) {
   }
 }
 const CORE = ['hips', 'spine', 'chest', 'neck', 'head'];
-const ALL_BONES = [...new Set([...CORE, ...AIMS.flatMap(a => [a[0], a[1]]).filter(Boolean), 'leftHand', 'rightHand', 'leftFoot', 'rightFoot'])];
+const ALL_BONES = [...new Set([...CORE, ...AIMS.flatMap(a => [a[0], a[1]]).filter(Boolean), 'leftHand', 'rightHand', 'leftFoot', 'rightFoot', 'leftShoulder', 'rightShoulder'])];
+// shoulder shrug: ear-to-shoulder height (over the shoulder width) shrinks when you raise your shoulders
+const shrug = { base: {} };
 
 /* ---------------- Procedural mannequin ---------------- */
 function buildMannequin() {
@@ -966,6 +968,17 @@ function solvePose(world, norm, t, alpha) {
   setWorld(chestName, chestW, alpha);
 
   for (const s of SIDES) {
+    // shrug first, so the arm below is aimed from the raised shoulder
+    const iSh = pidx(s, 'shoulder'), iEar = subjSide(s) === 'left' ? 7 : 8, iOther = pidx(s === 'left' ? 'right' : 'left', 'shoulder');
+    if (avatar.bone(s + 'Shoulder') && vis(iSh) > 0.5 && vis(iEar) > 0.5 && vis(iOther) > 0.5) {
+      const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
+      const width = Math.hypot((norm[iSh].x - norm[iOther].x) * vw, (norm[iSh].y - norm[iOther].y) * vh);
+      const d = (norm[iSh].y - norm[iEar].y) * vh / Math.max(1, width);
+      shrug.base[s] ??= d;
+      const amount = THREE.MathUtils.clamp((shrug.base[s] - d) / Math.max(0.05, shrug.base[s] * 0.3), 0, 1);
+      const W = _tmp.setFromAxisAngle(new V3(0, 0, 1), (s === 'left' ? 1 : -1) * amount * 0.35).clone().multiply(R.q0[s + 'Shoulder'] ?? IDENT);
+      setWorld(s + 'Shoulder', W, alpha);
+    }
     const sh = P(s, 'shoulder'), el = P(s, 'elbow'), wr = P(s, 'wrist');
     const elOk = vis(pidx(s, 'elbow')) > 0.5, wrOk = vis(pidx(s, 'wrist')) > 0.45;
     aim(s + 'UpperArm', elOk ? el.clone().sub(sh) : restArm(s, false), elOk ? alpha : alpha * 0.25);
@@ -1110,7 +1123,7 @@ function idle(dt, now) {
   // "lost" must outlast the gap between AI results, or slow PCs would snap back to the rest pose between frames
   const poseLost = now - seen.pose > Math.max(0.6, gapOf('body') * 3 + 0.5);
   if (poseLost || !opts.body) {
-    for (const n of ['hips', 'spine', 'chest']) relax(n, a);
+    for (const n of ['hips', 'spine', 'chest', 'leftShoulder', 'rightShoulder']) relax(n, a);
     for (const s of SIDES) {
       aim(s + 'UpperArm', restArm(s, false), a); aim(s + 'LowerArm', restArm(s, true), a);
       relax(s + 'Hand', a);
@@ -2502,7 +2515,7 @@ function placeChair(hips, thigh) {
 }
 const calibOrig = $('#calibBtn').onclick;
 function calibrateNow() {
-  calibOrig(); bodyPos.ref = null;
+  calibOrig(); bodyPos.ref = null; shrug.base = {}; // shoulders: measured again from this posture
   if ($('#optNeutral').checked && lastBlend) faceNeutral = { ...lastBlend }; // this face = "no expression"
 }
 $('#calibBtn').onclick = () => { if ($('#optCalibDelay').checked) countdown(3, calibrateNow); else calibrateNow(); };
@@ -3291,7 +3304,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, reaction, viewer, VIEWER, get extrasMs() { return extrasMs; }, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, reaction, shrug, testPose(world, norm) { withTargets(() => solvePose(world, norm, performance.now() / 1000, 1)); seen.pose = performance.now() / 1000; }, viewer, VIEWER, get extrasMs() { return extrasMs; }, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
