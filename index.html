@@ -301,6 +301,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>ミラー<small>鏡のように同じ側の手が動きます</small></span><input type="checkbox" id="optMirror" checked></label>
         <label class="toggle"><span>座りポーズ<small>脚が映っていないとき、椅子に座った形にします</small></span><input type="checkbox" id="optSit"></label>
         <label class="toggle"><span>椅子を表示<small>座りポーズのときに椅子を置きます</small></span><input type="checkbox" id="optChair" checked></label>
+        <label class="toggle"><span>机を表示<small>座りポーズのときに前に机を置きます。小物を机に置けます</small></span><input type="checkbox" id="optDesk"></label>
         <label class="toggle"><span>体の位置も動かす<small>左右に動く・しゃがむとアバターも移動します（「正面リセット」の位置が基準）</small></span><input type="checkbox" id="optMove"></label>
         <div class="slider">
           <div class="top"><label for="optSmooth">なめらかさ</label><output id="smoothOut">45</output></div>
@@ -441,6 +442,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <div class="grid3" id="customExpr"></div>
         </div>
         <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
+        <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
         <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
         <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
         <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
@@ -979,6 +981,8 @@ function solveHand(s, world, t, alpha) {
   // peace sign: index and middle straight, ring and little curled
   const ext = (mcp, tip) => H[tip].distanceTo(H[0]) / Math.max(1e-6, H[mcp].distanceTo(H[0]));
   if (ext(5, 8) > 1.6 && ext(9, 12) > 1.6 && ext(13, 16) < 1.3 && ext(17, 20) < 1.3) grip.peaceAt = t;
+  // pointing: only the index finger straight
+  if (ext(5, 8) > 1.6 && ext(9, 12) < 1.3 && ext(13, 16) < 1.3 && ext(17, 20) < 1.3) grip[s + 'PointAt'] = t;
 }
 
 /* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
@@ -1692,7 +1696,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -2028,6 +2032,11 @@ function stepPropsOnce(dt, colliders) {
     if (p.held) continue;
     const m = p.mesh;
     if (m.position.y < p.r) { m.position.y = p.r; if (p.vel.y < 0) p.vel.y *= -0.55; p.vel.x *= 0.92; p.vel.z *= 0.92; p.spin.multiplyScalar(0.9); }
+    // the desk top: land on it when coming down from above
+    const D = desk.box;
+    if (D && Math.abs(m.position.x - D.x) < D.hw && Math.abs(m.position.z - D.z) < D.hd && m.position.y < D.top + p.r && m.position.y > D.top - 0.05 && p.vel.y <= 0.05) {
+      m.position.y = D.top + p.r; if (p.vel.y < 0) p.vel.y *= -0.4; p.vel.x *= 0.9; p.vel.z *= 0.9; p.spin.multiplyScalar(0.85);
+    }
     const hr = Math.hypot(m.position.x, m.position.z);
     if (hr > 2.3) { m.position.x *= 2.3 / hr; m.position.z *= 2.3 / hr; p.vel.x *= -0.5; p.vel.z *= -0.5; }
     if (m.position.y > 4) { m.position.y = 4; p.vel.y = -Math.abs(p.vel.y) * 0.5; }
@@ -2423,6 +2432,7 @@ function stepBodyPos(dt, now) {
   placeChair(hips, thigh);
 }
 function placeChair(hips, thigh) {
+  placeDesk(hips);
   const show = $('#optChair').checked && sit.amount > 0.5;
   if (!show) { if (sit.chair) sit.chair.visible = false; return; }
   if (!sit.chair || sit.chairFor !== avatar) {
@@ -2853,6 +2863,54 @@ function detectJump(now) {
   jump.was = up;
 }
 
+
+/* ---- desk in front while sitting; its top is a surface props rest on ---- */
+const desk = { g: null, for: null, top: 0, box: null };
+function placeDesk(hips) {
+  const show = $('#optDesk').checked && sit.amount > 0.5;
+  if (!show) { if (desk.g) desk.g.visible = false; desk.box = null; return; }
+  if (!desk.g || desk.for !== avatar) {
+    desk.g?.removeFromParent(); desk.g?.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); });
+    // top at about elbow height of the sitting avatar
+    const R = avatar.rest.pos, sitHipsY = (R.hips?.y ?? 0.9) - (R.leftUpperLeg && R.leftLowerLeg ? R.leftUpperLeg.distanceTo(R.leftLowerLeg) : 0.4) * 0.95;
+    const elbowAboveHips = R.leftLowerArm && R.hips ? Math.max(0.15, R.leftLowerArm.y - R.hips.y - 0.05) : 0.25;
+    const top = sitHipsY + elbowAboveHips * 0.75, w = 1.1, d = 0.55;
+    const g = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: 0xb08a62, roughness: 0.6 }), dark = new THREE.MeshStandardMaterial({ color: 0x4a3a2c, roughness: 0.8 });
+    const board = new THREE.Mesh(new THREE.BoxGeometry(w, 0.035, d), wood); board.position.y = top - 0.0175; g.add(board);
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.045, top - 0.035, 0.045), dark); leg.position.set(x * (w / 2 - 0.04), (top - 0.035) / 2, z * (d / 2 - 0.04)); g.add(leg); }
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    desk.g = g; desk.for = avatar; desk.top = top; desk.w = w; desk.d = d; scene.add(g);
+  }
+  const hp = hips.getWorldPosition(_pf);
+  desk.g.visible = true; desk.g.position.set(hp.x, 0, hp.z + 0.42); // in front of the knees
+  desk.box = { x: desk.g.position.x, z: desk.g.position.z, top: desk.top, hw: desk.w / 2, hd: desk.d / 2 };
+}
+
+/* ---- laser pointer from the index fingertip while pointing ---- */
+const lasers = {};
+function stepLasers(now) {
+  for (const s of SIDES) {
+    const on = $('#optLaser').checked && now - (grip[s + 'PointAt'] ?? -1e9) < 0.3 && !hands[s].holding;
+    let L = lasers[s];
+    if (!on) { if (L) L.g.visible = false; continue; }
+    const tip = avatar?.bone(s + 'IndexDistal'), mid = avatar?.bone(s + 'IndexIntermediate'); if (!tip || !mid) continue;
+    if (!L) {
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 1, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0xff2a4a, transparent: true, opacity: 0.85, depthWrite: false }));
+      beam.geometry.translate(0, 0.5, 0); // grows from its base
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.01, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff6a80 }));
+      const g = new THREE.Group(); g.add(beam, dot); scene.add(g); L = lasers[s] = { g, beam, dot };
+    }
+    const a = mid.getWorldPosition(new V3()), b = tip.getWorldPosition(new V3()), dir = b.clone().sub(a).normalize();
+    // stop at the first thing in the way (props, desk, the floor) or 2.5 m
+    let len = 2.5;
+    if (dir.y < -1e-3) len = Math.min(len, -b.y / dir.y);
+    const ray = new THREE.Raycaster(b, dir, 0.01, len), targets = props.filter(p => p.held !== s).map(p => p.mesh); if (desk.g?.visible) targets.push(desk.g);
+    const hit = ray.intersectObjects(targets, true)[0]; if (hit) len = hit.distance;
+    L.g.visible = true; L.beam.position.copy(b); L.beam.quaternion.setFromUnitVectors(UP, dir); L.beam.scale.set(1, len, 1);
+    L.dot.position.copy(b).addScaledVector(dir, len);
+  }
+}
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -3071,6 +3129,7 @@ function extrasAfterUpdate(dt, now) {
   stepWands(now);
   stepLift();
   stepConfetti(dt);
+  stepLasers(now);
   stepWeather(dt, now);
   stepFx(dt, now);
   stepBubble(now);
@@ -3092,7 +3151,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
