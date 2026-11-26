@@ -449,6 +449,10 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" data-prop="star">星</button>
           <button type="button" class="btn sm" id="propClear">全部消す</button>
         </div>
+        <div class="grid2">
+          <button type="button" class="btn sm" id="confettiBtn">紙吹雪</button>
+          <label class="toggle">拍手で紙吹雪<input type="checkbox" id="optClap" checked></label>
+        </div>
         <button type="button" class="btn" id="liftBtn">リフティングゲーム</button>
         <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
         <p class="hint">リフティングゲーム：頭の上からボールが落ちてきます。頭や手で打ち上げて、床に落とさずに何回続くか数えます。<br>手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。マウスや指でドラッグしても動かせます（離すと投げられます）。</p>
@@ -538,7 +542,13 @@ const MODELS = [
     url: 'https://raw.githubusercontent.com/madjin/vrm-samples/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/stable/AvatarSample_C.vrm', credit: '© pixiv Inc. / VRoid Project · AvatarSample規約（商用可・クレジット不要・ヘイト等の用途は不可）' },
 ];
 
-const $ = (s) => document.querySelector(s);
+// elements found by id are remembered: many settings are read every frame, and the page never replaces them
+const $cache = new Map();
+const $ = (s) => {
+  if (s[0] !== '#' || /[\s.>\[:]/.test(s)) return document.querySelector(s);
+  let el = $cache.get(s); if (!el) { el = document.querySelector(s); if (el) $cache.set(s, el); }
+  return el;
+};
 const V3 = THREE.Vector3, Q = THREE.Quaternion;
 const UP = new V3(0, 1, 0);
 const SIDES = ['left', 'right'];
@@ -1664,7 +1674,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1755,6 +1765,7 @@ function showExit() {
 $('#streamBtn').onclick = () => setStreamMode(true);
 $('#streamExit').onclick = () => setStreamMode(false);
 stage.addEventListener('pointermove', () => { if (document.body.classList.contains('stream')) showExit(); });
+stage.addEventListener('pointerdown', () => { if (document.body.classList.contains('stream')) showExit(); }); // phones: a tap shows the button
 
 /* ---- screenshot ---- */
 const stamp = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
@@ -2718,6 +2729,43 @@ $('#bgVideoFile').onchange = (e) => {
   }).catch(() => toast('動画を再生できませんでした', 'mp4 (H.264) か webm を試してください。'));
 };
 
+
+/* ---- confetti (button, or clap your hands) ---- */
+const confetti = [];
+function burstConfetti(at) {
+  const c = at ?? (avatar?.bone('head')?.getWorldPosition(new V3()).add(new V3(0, 0.25, 0.1)) ?? new V3(0, 1.6, 0.2));
+  const cols = [0xff5c8a, 0xffd23f, 0x5fd39a, 0x7cc4ff, 0xb48cff, 0xff9f1c];
+  for (let i = 0; i < 70; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.018, 0.03), new THREE.MeshBasicMaterial({ color: cols[i % cols.length], side: THREE.DoubleSide, transparent: true }));
+    m.position.copy(c);
+    const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 1.4;
+    confetti.push({ m, vel: new V3(Math.cos(a) * sp * 0.6, 1 + Math.random() * 1.6, Math.sin(a) * sp * 0.4), spin: new V3(Math.random() * 9, Math.random() * 9, Math.random() * 9), age: 0 });
+    scene.add(m);
+  }
+}
+function stepConfetti(dt) {
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    const f = confetti[i]; f.age += dt;
+    f.vel.y -= 3 * dt; f.vel.multiplyScalar(Math.exp(-dt * 1.8)); // paper: falls slowly and flutters
+    f.m.position.addScaledVector(f.vel, dt); f.m.position.x += Math.sin(f.age * 7 + i) * 0.003;
+    f.m.rotation.x += f.spin.x * dt; f.m.rotation.y += f.spin.y * dt; f.m.rotation.z += f.spin.z * dt;
+    if (f.age > 2.5) f.m.material.opacity = Math.max(0, 1 - (f.age - 2.5) / 0.8);
+    if (f.age > 3.3 || f.m.position.y < 0) { f.m.removeFromParent(); f.m.geometry.dispose(); f.m.material.dispose(); confetti.splice(i, 1); }
+  }
+}
+$('#confettiBtn').onclick = () => burstConfetti();
+// clap: both hands meet quickly
+const clap = { last: 0, was: false };
+function detectClap(now) {
+  if (!$('#optClap').checked || !hands.left.prev || !hands.right.prev) return;
+  const fresh = now - grip.leftAt < 0.5 && now - grip.rightAt < 0.5; if (!fresh) return;
+  const d = hands.left.pos.distanceTo(hands.right.pos);
+  const closing = -hands.left.vel.clone().sub(hands.right.vel).dot(hands.left.pos.clone().sub(hands.right.pos).normalize());
+  const touching = d < 0.09;
+  if (touching && !clap.was && closing > 0.8 && now - clap.last > 0.6) { clap.last = now; burstConfetti(hands.left.pos.clone().lerp(hands.right.pos, 0.5).add(new V3(0, 0.1, 0))); }
+  clap.was = touching;
+}
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -2930,9 +2978,11 @@ function bvhCapture(now) {
 
 function extrasAfterUpdate(dt, now) {
   lastColliderDt = Math.max(dt, 1e-3);
+  detectClap(now);
   followCamera();
   stepWands(now);
   stepLift();
+  stepConfetti(dt);
   stepWeather(dt, now);
   stepFx(dt, now);
   stepBubble(now);
@@ -2954,7 +3004,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, lift, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, lift, confetti, burstConfetti, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
