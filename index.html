@@ -368,6 +368,15 @@ body.stream .stage { height: 100%; min-height: 0; }
         </div>
         <label class="toggle"><span>3秒数えてから録画<small>押したあと、ポーズを取る時間を取ります（もう一度押すと取り消し）</small></span><input type="checkbox" id="optRecDelay"></label>
         <p class="hint">停止するとファイルとして保存されます（MP4 で録れないブラウザでは WebM）。「マイクで口パク」がオンなら声も入ります。</p>
+        <div class="grid2">
+          <label class="btn sm file">BGMを読み込む<input type="file" id="bgmFile" accept="audio/*"></label>
+          <button type="button" class="btn sm" id="bgmPlay" disabled>BGM 再生</button>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optBgmVol">BGMの音量</label><output id="bgmVolOut">40</output></div>
+          <input type="range" id="optBgmVol" min="0" max="100" value="40">
+          <p class="hint" id="bgmName">BGMは録画にも入ります（くり返し再生）。</p>
+        </div>
         <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
         <label class="toggle"><span>スクショの背景を透明にする<small>アバターと小物だけが写ります（サムネイルやイラストの素材向け）</small></span><input type="checkbox" id="optShotAlpha"></label>
         <div class="grid2">
@@ -462,6 +471,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <div class="grid3" id="customExpr"></div>
         </div>
         <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
+        <label class="toggle"><span>グッド👍で「GOOD!」<small>親指を立てると、手の上にマークが出ます</small></span><input type="checkbox" id="optGood" checked></label>
         <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
         <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
         <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
@@ -1017,6 +1027,9 @@ function solveHand(s, world, t, alpha) {
   // peace sign: index and middle straight, ring and little curled
   const ext = (mcp, tip) => H[tip].distanceTo(H[0]) / Math.max(1e-6, H[mcp].distanceTo(H[0]));
   if (ext(5, 8) > 1.6 && ext(9, 12) > 1.6 && ext(13, 16) < 1.3 && ext(17, 20) < 1.3) grip.peaceAt = t;
+  // thumbs up: four fingers curled, thumb straight and pointing up
+  const thumbUp = H[4].y - H[2].y > 0.03 && H[4].distanceTo(H[0]) / Math.max(1e-6, H[5].distanceTo(H[0])) > 1.1;
+  if (thumbUp && ext(5, 8) < 1.3 && ext(9, 12) < 1.3 && ext(13, 16) < 1.3 && ext(17, 20) < 1.3) grip[s + 'GoodAt'] = t;
   // pointing: only the index finger straight
   if (ext(5, 8) > 1.6 && ext(9, 12) < 1.3 && ext(13, 16) < 1.3 && ext(17, 20) < 1.3) grip[s + 'PointAt'] = t;
 }
@@ -1692,8 +1705,8 @@ $('#recBtn').onclick = () => {
 };
 function startRecording() {
   if (!canvas.captureStream || typeof MediaRecorder === 'undefined') { toast('このブラウザは録画に対応していません', 'Chrome か Edge の最新版で試してください。'); return; }
-  const st = canvas.captureStream(30), audio = mic.stream?.getAudioTracks()[0];
-  if (audio) st.addTrack(audio); // "マイクで口パク" is on: record the voice too
+  const st = canvas.captureStream(30), audio = recordingAudio();
+  if (audio) st.addTrack(audio); // the voice ("マイクで口パク") and / or the BGM
   // MP4 plays everywhere (phones, social media); newer Chrome / Edge can record it directly
   const mp4 = audio ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/mp4'] : ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
   const webm = audio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
@@ -1748,7 +1761,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1767,7 +1780,7 @@ function loadSettings() {
   applyPreview();
   if ($('#optBg').value === 'image') $('#optBg').value = 'studio'; // the image itself is not stored
   $('#micGainOut').textContent = $('#optMicGain').value;
-  $('#mouthGainOut').textContent = $('#optMouthGain').value; $('#blinkGainOut').textContent = $('#optBlinkGain').value;
+  $('#mouthGainOut').textContent = $('#optMouthGain').value; $('#blinkGainOut').textContent = $('#optBlinkGain').value; $('#bgmVolOut').textContent = $('#optBgmVol').value;
   applyBackground();
   applyLight();
   setTimeout(applyWeather, 0);
@@ -3061,6 +3074,62 @@ function setupViewer() {
 $('#viewerUrl').value = location.origin + location.pathname + '?viewer';
 $('#copyViewer').onclick = async () => { try { await navigator.clipboard.writeText($('#viewerUrl').value); toast('コピーしました', 'OBS の「ソース」→「＋」→「ブラウザ」の URL 欄に貼り付けてください。幅・高さは 1280×720 などに。', 'info'); } catch { $('#viewerUrl').select(); } };
 
+
+/* ---- BGM: plays on the page and goes into recordings, mixed with the microphone ---- */
+const bgm = { el: null, ctx: null, src: null, gain: null, dest: null, micSrc: null, micFor: null };
+function bgmGraph() {
+  bgm.ctx ??= new AudioContext();
+  if (!bgm.dest) { bgm.dest = bgm.ctx.createMediaStreamDestination(); bgm.gain = bgm.ctx.createGain(); bgm.gain.connect(bgm.ctx.destination); bgm.gain.connect(bgm.dest); }
+  return bgm.ctx;
+}
+$('#bgmFile').onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const ctx = bgmGraph();
+  bgm.el?.pause(); bgm.src?.disconnect();
+  const el = new Audio(URL.createObjectURL(f)); el.loop = true;
+  // the button follows what the player actually does
+  el.onplay = () => { $('#bgmPlay').textContent = 'BGM 停止'; }; el.onpause = () => { $('#bgmPlay').textContent = 'BGM 再生'; };
+  bgm.src = ctx.createMediaElementSource(el); bgm.src.connect(bgm.gain); bgm.el = el;
+  bgm.gain.gain.value = +$('#optBgmVol').value / 100;
+  $('#bgmName').textContent = `BGM：${f.name}（録画にも入ります）`;
+  $('#bgmPlay').disabled = false; ctx.resume(); el.play().catch(() => {});
+};
+$('#bgmPlay').onclick = () => {
+  if (!bgm.el) return; bgm.ctx.resume();
+  if (bgm.el.paused) bgm.el.play().catch(() => {}); else bgm.el.pause();
+};
+$('#optBgmVol').oninput = () => { $('#bgmVolOut').textContent = $('#optBgmVol').value; if (bgm.gain) bgm.gain.gain.value = +$('#optBgmVol').value / 100; };
+// one audio track for the recorder: the BGM bus plus the microphone (the mic is not played back to the speakers)
+function recordingAudio() {
+  const micTrack = mic.stream?.getAudioTracks()[0];
+  if (!bgm.el) return micTrack ?? null;
+  const ctx = bgmGraph();
+  if (mic.stream && bgm.micFor !== mic.stream) { bgm.micSrc?.disconnect(); bgm.micSrc = ctx.createMediaStreamSource(mic.stream); bgm.micSrc.connect(bgm.dest); bgm.micFor = mic.stream; }
+  return bgm.dest.stream.getAudioTracks()[0];
+}
+
+/* ---- thumbs up -> a "GOOD!" badge over that hand ---- */
+const good = { last: { left: 0, right: 0 } };
+function goodTexture() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#ffd23f'; g.strokeStyle = '#fff'; g.lineWidth = 10;
+  g.beginPath(); g.roundRect(8, 14, 240, 100, 50); g.fill(); g.stroke();
+  g.font = '900 64px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#7a3b00'; g.fillText('GOOD!', 128, 66);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function stepGood(now) {
+  if (!$('#optGood').checked) return;
+  for (const s of SIDES) {
+    if (now - (grip[s + 'GoodAt'] ?? -1e9) > 0.3 || now - good.last[s] < 1.5 || !hands[s].prev) continue;
+    good.last[s] = now;
+    fxTex.good ??= goodTexture();
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTex.good, transparent: true, depthWrite: false }));
+    sp.position.copy(hands[s].pos).add(new V3(0, 0.14, 0.05)); sp.scale.set(0.16, 0.08, 1); scene.add(sp);
+    fxList.push({ sp, vel: new V3(0, 0.08, 0), life: 1.5, age: 0, size: 0.16 });
+    sp.scale.set(0.16, 0.08, 1); sfx('ding');
+  }
+}
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -3282,6 +3351,7 @@ function extrasAfterUpdate(dt, now) {
   stepLift();
   stepConfetti(dt);
   stepLasers(now);
+  stepGood(now);
   stepWeather(dt, now);
   stepFx(dt, now);
   stepBubble(now);
