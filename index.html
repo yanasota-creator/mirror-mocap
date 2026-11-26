@@ -238,6 +238,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <div class="card">
           <h1>内蔵カメラだけで、<br>アバターを動かす</h1>
           <p>体・顔・指の動きをブラウザ内のAI（MediaPipe）で推定して、3Dモデルに反映します。映像はこのPCの外には送られません。</p>
+          <p>右のパネル（スマホでは下）で、表情・背景・配信モード・小物・アクセサリー・録画・VRChat 連携などが使えます。見出しを押すと開きます。</p>
           <div class="row">
             <button type="button" class="btn primary" id="startBtn">カメラを開始</button>
             <label class="btn file">動画ファイルで試す<input type="file" id="videoFile2" accept="video/*"></label>
@@ -420,6 +421,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <option value="sparkle">キラキラ</option>
           <option value="hearts">ハート</option>
         </select>
+        <label class="toggle"><span>効果音<small>紙吹雪・ハート・ボールが当たったときなどに小さな音を鳴らします</small></span><input type="checkbox" id="optSfx"></label>
         <label class="toggle"><span>カメラが体についていく<small>「体の位置も動かす」で動いたとき、カメラも一緒に動きます</small></span><input type="checkbox" id="optFollow" checked></label>
         <label class="toggle"><span>カメラをゆっくり動かす<small>配信画面に少し動きを付けます</small></span><input type="checkbox" id="optSway"></label>
         <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）<kbd>F</kbd></button>
@@ -1458,7 +1460,7 @@ function drawOverlay(poseRes, faceRes, handRes) {
 
 /* ---------------- Main loop ---------------- */
 const chips = { body: $('#chipBody'), face: $('#chipFace'), left: $('#chipLH'), right: $('#chipRH') };
-let frameCount = 0, statT = performance.now();
+let frameCount = 0, statT = performance.now(), extrasMs = 0;
 const clock = new THREE.Clock();
 
 /* Bone interpolation: each AI result sets *target* rotations; every render frame eases the shown pose toward them.
@@ -1607,9 +1609,13 @@ function tick() {
       withTargets(() => idle(dt, now));
       easeToTargets(dt);
     }
+    const tx = performance.now();
     extrasBeforeUpdate(dt, now);
+    const ty = performance.now();
     avatar.update(dt);
+    const tz = performance.now();
     extrasAfterUpdate(dt, now);
+    extrasMs += ((ty - tx) + (performance.now() - tz) - extrasMs) * 0.1; // time spent in the added features (EMA)
   }
   if (viewTween) {
     const k = Math.min(1, (performance.now() - viewTween.t0) / 600), e = 1 - (1 - k) ** 3;
@@ -1629,7 +1635,7 @@ function tick() {
     if (running && engine) {
       const f = (p) => partStat[p].ms != null ? `${PART_LABEL[p]} ${partStat[p].delegate} ${partStat[p].ms.toFixed(0)}ms` : null;
       const deciding = PARTS.some(p => partStat[p].deciding);
-      $('#perfDetail').textContent = '1回の推定: ' + PARTS.map(f).filter(Boolean).join(' / ') + (deciding ? '（GPUとCPUの速さを比較中…）' : '');
+      $('#perfDetail').textContent = '1回の推定: ' + PARTS.map(f).filter(Boolean).join(' / ') + (deciding ? '（GPUとCPUの速さを比較中…）' : '') + ` ／ 追加機能 ${extrasMs.toFixed(1)}ms`;
     }
     // drawing too slow while tracking: lower the 3D resolution step by step (reset when the mode changes)
     if (running && frameCount * 1000 / ms < 35 && renderer.getPixelRatio() > 0.75) {
@@ -1704,7 +1710,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optIdleSway', 'optMouseGaze', 'optPoke'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -2168,7 +2174,7 @@ const scheduleAccessories = () => requestAnimationFrame(() => requestAnimationFr
 
 
 /* ---- collapsible panel sections (remembered in this browser) ---- */
-const CLOSED_KEY = 'mirror-mocap-closed', CLOSED_DEFAULT = ['アクセサリー', '外部連携', '精度を上げるコツ'];
+const CLOSED_KEY = 'mirror-mocap-closed', CLOSED_DEFAULT = ['アクセサリー', '外部連携', '吹き出し・チャット', '精度を上げるコツ'];
 let closedSecs; try { closedSecs = JSON.parse(localStorage.getItem(CLOSED_KEY)); } catch {}
 closedSecs = Array.isArray(closedSecs) ? closedSecs : CLOSED_DEFAULT;
 document.querySelectorAll('.panel .sec > h2').forEach(h => {
@@ -2768,6 +2774,7 @@ function onBodyHit(p, c) {
   const now = performance.now();
   if (now - lift.lastHit < 250) return; // one touch, not one per frame
   lift.lastHit = now; lift.count++; lift.best = Math.max(lift.best, lift.count);
+  sfx(lift.count % 10 === 0 ? 'ding' : 'boing');
   if (c.name === 'head' && p.vel.y < 2.2) p.vel.y = 2.2; // a header always pops it up a little
   showLiftScore();
   if (lift.count % 10 === 0) for (let i = 0; i < 6; i++) spawnFx('heart', new V3((Math.random() - 0.5) * 0.4, 0.25, 0.1), new V3((Math.random() - 0.5) * 0.2, 0.3, 0), 1.2, 0.05);
@@ -2789,7 +2796,7 @@ function startLift() {
 function stepLift() {
   const b = lift.ball; if (!b) return;
   if (!props.includes(b)) { lift.ball = null; return; }
-  if (b.mesh.position.y <= b.r + 0.002 && !b.held) { showLiftScore(true); lift.ball = null; setTimeout(() => { if (!lift.ball) $('#liftScore').hidden = true; }, 4000); }
+  if (b.mesh.position.y <= b.r + 0.002 && !b.held) { showLiftScore(true); sfx('end'); lift.ball = null; setTimeout(() => { if (!lift.ball) $('#liftScore').hidden = true; }, 4000); }
 }
 $('#liftBtn').onclick = startLift;
 
@@ -2829,6 +2836,7 @@ $('#bgVideoFile').onchange = (e) => {
 /* ---- confetti (button, or clap your hands) ---- */
 const confetti = [];
 function burstConfetti(at) {
+  sfx('pop');
   const c = at ?? (avatar?.bone('head')?.getWorldPosition(new V3()).add(new V3(0, 0.25, 0.1)) ?? new V3(0, 1.6, 0.2));
   const cols = [0xff5c8a, 0xffd23f, 0x5fd39a, 0x7cc4ff, 0xb48cff, 0xff9f1c];
   for (let i = 0; i < 70; i++) {
@@ -2947,9 +2955,31 @@ canvas.addEventListener('pointerup', (e) => {
   const now = performance.now() / 1000, head = avatar.bone('head')?.getWorldPosition(new V3());
   const onHead = head && hit.point.y > head.y - 0.02;
   reaction.kind = onHead ? 'happy' : 'surprised'; reaction.t = now;
+  sfx(onHead ? 'ding' : 'bang');
   if (onHead) for (let i = 0; i < 5; i++) spawnFx('heart', new V3((Math.random() - 0.5) * 0.3, (fxState.head?.top ?? 0.2) + Math.random() * 0.05, 0.05), new V3((Math.random() - 0.5) * 0.06, 0.2, 0), 1.4, 0.05);
   else { if (!fxState.head) { const w = headFrame(); fxState.head = measureHead(w); w.removeFromParent(); fxState.avatar = avatar; } spawnFx('bang', new V3(0.12, fxState.head.top + 0.02, 0.03), new V3(0, 0.05, 0), 1.1, 0.09); }
 });
+
+
+/* ---- small synthesized sound effects (no audio files) ---- */
+let sfxCtx = null;
+addEventListener('pointerdown', () => sfxCtx?.resume(), { capture: true });
+function sfx(kind) {
+  if (!$('#optSfx').checked) return;
+  try { sfxCtx ??= new AudioContext(); } catch { return; }
+  const c = sfxCtx, t = c.currentTime, out = c.createGain(); out.gain.value = 0.18; out.connect(c.destination);
+  const tone = (type, f0, f1, dur, at = 0, vol = 1) => {
+    const o = c.createOscillator(), g = c.createGain(); o.type = type;
+    o.frequency.setValueAtTime(f0, t + at); o.frequency.exponentialRampToValueAtTime(f1, t + at + dur);
+    g.gain.setValueAtTime(0.0001, t + at); g.gain.exponentialRampToValueAtTime(vol, t + at + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+    o.connect(g).connect(out); o.start(t + at); o.stop(t + at + dur + 0.02);
+  };
+  if (kind === 'pop') { for (let i = 0; i < 4; i++) tone('triangle', 500 + i * 260, 900 + i * 300, 0.09, i * 0.05, 0.7); }
+  else if (kind === 'ding') { tone('sine', 1320, 1320, 0.35, 0, 0.8); tone('sine', 1980, 1980, 0.25, 0.06, 0.4); }
+  else if (kind === 'boing') tone('sine', 420, 160, 0.18, 0, 0.9);
+  else if (kind === 'bang') { tone('square', 660, 880, 0.08, 0, 0.35); tone('square', 880, 1100, 0.1, 0.09, 0.35); }
+  else if (kind === 'end') { tone('triangle', 660, 660, 0.15, 0, 0.6); tone('triangle', 440, 440, 0.3, 0.16, 0.6); }
+}
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
@@ -3191,7 +3221,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, reaction, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, reaction, get extrasMs() { return extrasMs; }, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
