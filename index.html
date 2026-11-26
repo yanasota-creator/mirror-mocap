@@ -238,6 +238,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <button type="button" data-view="full" aria-pressed="false">全身</button>
         <button type="button" data-view="upper" aria-pressed="true">上半身</button>
         <button type="button" data-view="face" aria-pressed="false">顔</button>
+        <button type="button" id="myView" title="クリックで保存した視点へ／長押しで今の視点を保存">★</button>
       </div>
 
       <div class="intro" id="intro">
@@ -423,6 +424,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label for="optBg">背景</label>
         <select id="optBg" aria-label="背景">
           <option value="studio" selected>スタジオ（既定）</option>
+          <option value="room">部屋（3D）</option>
           <option value="green">グリーンバック（OBSで抜く用）</option>
           <option value="blue">ブルーバック</option>
           <option value="white">白</option>
@@ -698,7 +700,7 @@ function setView(name, instant = false) {
   viewTween = { t0: performance.now(), fromT: controls.target.clone(), fromP: camera.position.clone(), toT: v.t, toP: v.p };
 }
 let currentView = 'upper';
-document.querySelectorAll('.views button').forEach(b => b.onclick = () => { currentView = b.dataset.view; setView(currentView); });
+document.querySelectorAll('.views button[data-view]').forEach(b => b.onclick = () => { currentView = b.dataset.view; setView(currentView); });
 
 /* ---------------- Bone naming (VRM 1.0 humanoid names) ---------------- */
 const FINGER_DEFS = [
@@ -1818,6 +1820,8 @@ function fitBackground() {
 function applyBackground() {
   const v = $('#optBg').value, studio = v === 'studio';
   floor.visible = ring.visible = grid.visible = studio;
+  setRoom(v === 'room');
+  if (v === 'room') { scene.fog = null; scene.background = new THREE.Color(0x2b2a33); return; }
   scene.fog = studio ? studioFog : null;
   if (v === 'image' && bgTex) { fitBackground(); scene.background = bgTex; }
   else scene.background = new THREE.Color(studio || v === 'image' ? STUDIO_BG : BG_COLORS[v]);
@@ -1862,10 +1866,11 @@ function download(url, name) { const a = document.createElement('a'); a.href = u
 $('#shotBtn').onclick = () => {
   const clear = $('#optShotAlpha').checked;
   const keep = { bg: scene.background, fog: scene.fog, floor: floor.visible, ring: ring.visible, grid: grid.visible };
-  if (clear) { scene.background = null; scene.fog = null; floor.visible = ring.visible = grid.visible = false; if (weather.pts) weather.pts.visible = false; }
+  const roomWas = room?.visible;
+  if (clear) { scene.background = null; scene.fog = null; floor.visible = ring.visible = grid.visible = false; if (weather.pts) weather.pts.visible = false; if (room) room.visible = false; }
   renderer.render(scene, camera); // read the canvas in the same task as the draw
   const url = canvas.toDataURL('image/png');
-  if (clear) { scene.background = keep.bg; scene.fog = keep.fog; floor.visible = keep.floor; ring.visible = keep.ring; grid.visible = keep.grid; if (weather.pts) weather.pts.visible = true; }
+  if (clear) { scene.background = keep.bg; scene.fog = keep.fog; floor.visible = keep.floor; ring.visible = keep.ring; grid.visible = keep.grid; if (weather.pts) weather.pts.visible = true; if (room) room.visible = roomWas; }
   download(url, `mocap-${stamp()}${clear ? '-transparent' : ''}.png`);
 };
 
@@ -3060,7 +3065,7 @@ function applyViewer(now) {
 }
 function setupViewer() {
   document.body.classList.add('viewer');
-  scene.background = null; scene.fog = null; floor.visible = ring.visible = grid.visible = false;
+  scene.background = null; scene.fog = null; floor.visible = ring.visible = grid.visible = false; setRoom(false);
   renderer.setClearColor(0x000000, 0);
   $('#optBridge').checked = true; connectBridge();
   // the sender's blinks and gaze come with the pose; no weather on an overlay (nothing here is saved)
@@ -3129,6 +3134,61 @@ function stepGood(now) {
     sp.scale.set(0.16, 0.08, 1); sfx('ding');
   }
 }
+
+
+/* ---- a small 3D room as a background ---- */
+let room = null;
+function buildRoom() {
+  const g = new THREE.Group(), M = (c, e = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...e });
+  const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.receiveShadow = true; o.castShadow = true; g.add(o); return o; };
+  // floor (wood planks), back wall, a side wall
+  const floorM = M(0x9b7652, { roughness: 0.7 });
+  for (let i = 0; i < 10; i++) box(0.5, 0.02, 5, M(i % 2 ? 0x9b7652 : 0x8f6c4a, { roughness: 0.7 }), -2.25 + i * 0.5, -0.01, 0.3);
+  box(5, 3, 0.1, M(0xe9e1d6), 0, 1.5, -1.6);             // back wall
+  box(0.1, 3, 4, M(0xdfd5c8), -2.5, 1.5, 0.3);           // left wall
+  box(5, 0.12, 0.04, M(0xcdbfae), 0, 0.06, -1.53);       // skirting
+  // window with soft daylight
+  box(1.3, 1.0, 0.06, M(0x6b5844), 1.0, 1.65, -1.54);
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.88), new THREE.MeshStandardMaterial({ color: 0xbfe3ff, emissive: 0x9fd2ff, emissiveIntensity: 1.1 }));
+  pane.position.set(1.0, 1.65, -1.505); g.add(pane);
+  box(0.03, 0.88, 0.02, M(0x6b5844), 1.0, 1.65, -1.49); box(1.18, 0.03, 0.02, M(0x6b5844), 1.0, 1.65, -1.49);
+  // shelf with books
+  box(1.0, 0.04, 0.3, M(0x7a5a3c), -1.2, 1.35, -1.43); box(1.0, 0.04, 0.3, M(0x7a5a3c), -1.2, 0.95, -1.43);
+  const cols = [0xd9534f, 0x5bc0de, 0xf0ad4e, 0x5cb85c, 0x9b59b6, 0x34495e];
+  for (let i = 0; i < 9; i++) box(0.06, 0.2 + (i % 3) * 0.04, 0.2, M(cols[i % cols.length]), -1.6 + i * 0.075, 1.47 + (i % 3) * 0.02, -1.43);
+  // potted plant
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.3, 20), M(0xc8643b)); pot.position.set(-1.9, 0.15, -0.9); pot.castShadow = true; g.add(pot);
+  for (let i = 0; i < 7; i++) { const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.14 + (i % 2) * 0.04, 12, 10), M(i % 2 ? 0x4f8f3a : 0x3f7a2e)); leaf.position.set(-1.9 + Math.sin(i * 1.7) * 0.12, 0.5 + i * 0.08, -0.9 + Math.cos(i * 1.7) * 0.12); leaf.castShadow = true; g.add(leaf); }
+  // a floor lamp that really lights the room
+  box(0.04, 1.4, 0.04, M(0x333333, { metalness: 0.6 }), 1.9, 0.7, -0.9);
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.22, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd68a, emissiveIntensity: 0.8, side: THREE.DoubleSide }));
+  shade.position.set(1.9, 1.45, -0.9); g.add(shade);
+  const bulb = new THREE.PointLight(0xffd8a0, 1.6, 4, 1.5); bulb.position.set(1.9, 1.4, -0.9); g.add(bulb);
+  return g;
+}
+function setRoom(on) {
+  if (on && !room) { room = buildRoom(); scene.add(room); }
+  if (room) room.visible = on;
+}
+
+/* ---- your own camera angle (★): click = go there, press and hold = save the current one ---- */
+const MYVIEW_KEY = 'mirror-mocap-myview';
+// decided by the input times of press and release (a busy page can run timers late)
+let myDown = null;
+$('#myView').addEventListener('pointerdown', (e) => { myDown = e.timeStamp; });
+$('#myView').addEventListener('pointerleave', () => { myDown = null; });
+$('#myView').addEventListener('pointerup', (e) => {
+  if (myDown == null) return;
+  const held = e.timeStamp - myDown; myDown = null;
+  if (held >= 500) {
+    try { localStorage.setItem(MYVIEW_KEY, JSON.stringify({ t: controls.target.toArray(), p: camera.position.toArray() })); } catch {}
+    toast('視点を保存しました', '★ をクリックすると、いつでもこの視点に戻ります。', 'info'); setTimeout(() => { $('#toast').hidden = true; }, 2000);
+    return;
+  }
+  let v = null; try { v = JSON.parse(localStorage.getItem(MYVIEW_KEY)); } catch {}
+  if (!v) { toast('まだ保存されていません', '好きな角度にしてから ★ を長押しすると保存できます。', 'info'); return; }
+  viewTween = { t0: performance.now(), fromT: controls.target.clone(), fromP: camera.position.clone(), toT: new V3(...v.t), toP: new V3(...v.p) };
+});
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
