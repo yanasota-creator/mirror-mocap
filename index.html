@@ -444,6 +444,9 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
         <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
         <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
+        <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
+        <label class="toggle"><span>目線がマウスを追う<small>顔が映っていないとき、マウスの方を見ます（小窓のマスコットにも）</small></span><input type="checkbox" id="optMouseGaze" checked></label>
+        <label class="toggle"><span>クリックで反応<small>頭をクリックすると喜び、体をクリックすると驚きます</small></span><input type="checkbox" id="optPoke" checked></label>
         <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
         <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
         <div class="slider">
@@ -1090,11 +1093,16 @@ function idle(dt, now) {
     const breathe = Math.sin(now * 1.6) * 0.012;
     const c = avatar.bone('chest') || avatar.bone('spine');
     if (c) c.quaternion.multiply(_tmp.setFromAxisAngle(new V3(1, 0, 0), breathe * a));
+    // "待機中にゆらゆら": a slow side-to-side sway of the upper body
+    const sp = $('#optIdleSway').checked && avatar.bone('spine');
+    if (sp) sp.quaternion.multiply(_tmp.setFromAxisAngle(new V3(0, 0, 1), Math.sin(now * 0.7) * 0.035 * a));
   }
   // while a hand covers the face, hold the last pose instead of returning to rest (at most 4 s)
   const faceSeen = Math.max(seen.face, Math.min(faceHeld, seen.face + 4));
   if (now - faceSeen > Math.max(0.6, gapOf('face') * 3 + 0.5) || !opts.face) {
     relax('neck', a); relax('head', a);
+    const hd = $('#optIdleSway').checked && avatar.bone('head');
+    if (hd) hd.quaternion.multiply(_tmp.setFromAxisAngle(new V3(0, 0, 1), Math.sin(now * 0.5 + 1) * 0.06 * a)).multiply(_tmp.setFromAxisAngle(UP, Math.sin(now * 0.33) * 0.08 * a));
     for (const k in exprState) exprState[k] *= 1 - a;
     avatar.expr(exprState);
     avatar.look(0, 0);
@@ -1696,7 +1704,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optIdleSway', 'optMouseGaze', 'optPoke'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1894,8 +1902,11 @@ function extrasBeforeUpdate(dt, now) {
     if (now > autoBlink.next) { autoBlink.at = now; autoBlink.next = now + 2 + Math.random() * 3.5; }
     const k = (now - autoBlink.at) / 0.16, b = k >= 0 && k < 1 ? Math.sin(k * Math.PI) : 0;
     e.blinkLeft = Math.max(e.blinkLeft ?? 0, b); e.blinkRight = Math.max(e.blinkRight ?? 0, b);
-    avatar.vrm?.lookAt?.lookAt(camera.position);
+    avatar.vrm?.lookAt?.lookAt(mouseGazeTarget(now) ?? camera.position);
   }
+  // a click reaction plays on top of everything for a moment
+  const rk = reaction.kind, rw = Math.max(0, 1 - Math.max(0, now - reaction.t - 1.2) / 0.5) * (now - reaction.t < 1.7 ? 1 : 0);
+  if (rk && rw > 0) e[rk] = Math.max(e[rk] ?? 0, rw);
   for (const k in presetW) e[k] = Math.max(e[k] ?? 0, presetW[k]);
   e.happy = Math.max(e.happy ?? 0, gestureW);
   if (m) for (const k in m) e[k] = Math.max(e[k] ?? 0, Math.min(1, m[k]));
@@ -2911,6 +2922,35 @@ function stepLasers(now) {
   }
 }
 
+
+/* ---- eyes follow the mouse; clicking the avatar makes it react ---- */
+const mouse = { ndc: new THREE.Vector2(), t: -1e9, down: null };
+canvas.addEventListener('pointermove', (e) => { mouse.ndc.copy(ndc(e)); mouse.t = performance.now() / 1000; });
+function mouseGazeTarget(now) {
+  if (!$('#optMouseGaze').checked || now - mouse.t > 4) return null;
+  const head = avatar?.bone('head'); if (!head) return null;
+  // the point under the mouse on a plane half a meter in front of the face
+  const hp = head.getWorldPosition(new V3()), r = new THREE.Raycaster(); r.setFromCamera(mouse.ndc, camera);
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3()).negate(), hp.clone().add(new V3(0, 0, 0.5)));
+  return r.ray.intersectPlane(plane, new V3());
+}
+const reaction = { kind: null, t: -1e9 };
+canvas.addEventListener('pointerdown', (e) => { mouse.down = { x: e.clientX, y: e.clientY, t: performance.now(), prop: !!drag.p }; }); // runs after the prop-drag handler
+canvas.addEventListener('pointerup', (e) => {
+  const d = mouse.down; mouse.down = null;
+  if (!d || d.prop || drag.p || !$('#optPoke').checked || !avatar) return;
+  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 400) return; // that was a camera drag
+  const r = new THREE.Raycaster(); r.setFromCamera(ndc(e), camera);
+  const skip = new Set(); for (const p of props) p.mesh.traverse(o => skip.add(o)); accGroup?.traverse(o => skip.add(o));
+  const meshes = []; avatar.root.traverse(o => { if ((o.isMesh || o.isSkinnedMesh) && !skip.has(o)) meshes.push(o); });
+  const hit = r.intersectObjects(meshes, false)[0]; if (!hit) return;
+  const now = performance.now() / 1000, head = avatar.bone('head')?.getWorldPosition(new V3());
+  const onHead = head && hit.point.y > head.y - 0.02;
+  reaction.kind = onHead ? 'happy' : 'surprised'; reaction.t = now;
+  if (onHead) for (let i = 0; i < 5; i++) spawnFx('heart', new V3((Math.random() - 0.5) * 0.3, (fxState.head?.top ?? 0.2) + Math.random() * 0.05, 0.05), new V3((Math.random() - 0.5) * 0.06, 0.2, 0), 1.4, 0.05);
+  else { if (!fxState.head) { const w = headFrame(); fxState.head = measureHead(w); w.removeFromParent(); fxState.avatar = avatar; } spawnFx('bang', new V3(0.12, fxState.head.top + 0.02, 0.03), new V3(0, 0.05, 0), 1.1, 0.09); }
+});
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -3151,7 +3191,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, desk, reaction, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
