@@ -30,7 +30,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, label.file:focu
   border-bottom: 1px solid var(--line); background: var(--panel);
 }
 .brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
-.brand b { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .02em; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .02em; }
 .brand small { color: var(--muted); font-size: 12px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
@@ -176,6 +176,7 @@ input.text { width: 100%; background: #232734; border: 1px solid var(--line); bo
 .sec.closed:not(.searching) h2::after { transform: rotate(-45deg); }
 .sec.closed:not(.searching) > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
+.sec-toggle { flex: 1; text-align: left; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .liftScore { position: absolute; top: 16px; right: 16px; font: 400 44px var(--font-display); color: #fff; text-shadow: 0 3px 14px rgba(0,0,0,.6); z-index: 4; text-align: right; line-height: 1.1; pointer-events: none; }
 .liftScore small { display: block; font: 600 13px var(--font-body); color: var(--muted); text-shadow: none; }
 .frozen { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(18,20,27,.8); border: 1px solid var(--warn); color: var(--warn); border-radius: 999px; padding: 2px 12px; font-size: 12px; z-index: 4; }

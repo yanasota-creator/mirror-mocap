@@ -257,15 +257,17 @@ let closedSecs; try { closedSecs = JSON.parse(localStorage.getItem(CLOSED_KEY));
 closedSecs = Array.isArray(closedSecs) ? closedSecs : CLOSED_DEFAULT;
 document.querySelectorAll('.panel .sec > h2').forEach(h => {
   const sec = h.parentElement, name = h.textContent.trim();
-  const set = (closed) => { sec.classList.toggle('closed', closed); h.setAttribute('aria-expanded', String(!closed)); };
-  h.tabIndex = 0; h.setAttribute('role', 'button'); set(closedSecs.includes(name));
+  // a real button inside the heading: screen readers announce "heading, button, collapsed / expanded"
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sec-toggle'; btn.textContent = name;
+  h.textContent = ''; h.append(btn);
+  const set = (closed) => { sec.classList.toggle('closed', closed); btn.setAttribute('aria-expanded', String(!closed)); };
+  set(closedSecs.includes(name));
   const toggle = () => {
     set(!sec.classList.contains('closed'));
     closedSecs = [...document.querySelectorAll('.panel .sec.closed > h2')].map(x => x.textContent.trim());
     try { localStorage.setItem(CLOSED_KEY, JSON.stringify(closedSecs)); } catch {}
   };
-  h.onclick = toggle;
-  h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+  h.onclick = toggle; // the whole row, arrow included (the button inside gives keyboard and screen-reader access)
 });
 
 

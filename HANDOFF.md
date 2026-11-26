@@ -191,7 +191,7 @@ tools/                     開発用（build.py, test_all.py, test_bridge.py, we
 - クラウド環境の制限
   - jsDelivr / unpkg / cdnjs / Arweave / hub.vroid.com などには接続できない
   - raw.githubusercontent.com・npm・PyPI・storage.googleapis.com（MediaPipe のモデルとテスト用写真）には接続できる。公開リポジトリ（例：vrm-c/UniVRM）は clone できる
-- **テスト**：`python3 tools/test_all.py` で全部（組み立て・SRI・文法・ブリッジ・ブラウザ）。詳しくは `tools/README.md`。smoke.js はWebサーバーを自分で立てるので、別のターミナルは不要
+- **テスト**：`python3 tools/test_all.py` で全部（組み立て・SRI・文法・ESLint・ブリッジ・ブラウザ。`--a11y` で axe も）。GitHub では全部＋本物の jsDelivr との指紋照合が毎回走る。ブラウザのテストの共通部分は `tools/webtest/lib.js`。詳しくは `tools/README.md`。smoke.js はWebサーバーを自分で立てるので、別のターミナルは不要
 - **設定欄**：区分（`<section class="sec">`）には `data-cat` で分類（basic / face / stream / play / save / link、複数可）を付ける。付け忘れるとタブで出なくなる。検索は区分の中の直下の要素ごとに文字を探す
 - **グリッドのはみ出し**：グリッドの列は `minmax(0, 1fr)` にする（`1fr` だけだと、横に長い部品1つで欄全体がはみ出した）
   - 描画は1秒に3〜5コマしか出ません。決まった時間だけ待つテストは失敗しやすいので、結果が出るまで待つ形で書きます

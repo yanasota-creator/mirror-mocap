@@ -4,11 +4,13 @@
     python3 tools/test_all.py            all checks (the browser test takes a few minutes)
     python3 tools/test_all.py --quick    skip the browser test
     python3 tools/test_all.py --cam cam.y4m   also check tracking from a fake camera video
+    python3 tools/test_all.py --a11y     also run the accessibility check (axe; slow without a GPU)
 
 1. index.html is built from src/ and the library fingerprints (SRI) match   (tools/build.py --check)
 2. the page's script has no syntax errors and passes the code check         (node --check, ESLint)
 3. the PC bridge                                                             (tools/test_bridge.py)
 4. the web page in a real browser                                            (tools/webtest/smoke.js)
+5. accessibility, with --a11y                                                (tools/webtest/a11y.js)
 """
 import re
 import shutil
@@ -72,6 +74,8 @@ def main():
             if '--cam' in args:
                 cmd.append(str(Path(args[args.index('--cam') + 1]).resolve()))
             results['4. Web版（ブラウザ）'] = run('4. Web版（ブラウザ）', cmd, cwd=web, timeout=1200)
+            if '--a11y' in args:
+                results['5. 使いやすさ（axe）'] = run('5. 使いやすさ（axe）', ['node', 'a11y.js'], cwd=web, timeout=1800)
     print()
     for k, v in results.items():
         print({True: '○', False: '×', None: '－'}[v], k, '' if v is not None else '（実行できなかったので省略）')

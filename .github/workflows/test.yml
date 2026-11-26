@@ -29,6 +29,6 @@ jobs:
           npm install --no-save playwright@1.63.0
           npx playwright install --with-deps chromium
       - name: Run all checks
-        run: python tools/test_all.py
+        run: python tools/test_all.py --a11y
       - name: The libraries on jsDelivr match the fingerprints in the page
         run: python tools/build.py --check-cdn

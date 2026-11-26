@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
      tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-tzh7ryX+RjukpTFidIaDUILEPFYE/jUL84Htwa7se/k=' 'sha256-SZPMMzTLplak4zKy8dfGp1sGm8k6iftfDCdimeTagPE=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net blob: 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-tzh7ryX+RjukpTFidIaDUILEPFYE/jUL84Htwa7se/k=' 'sha256-M059MhcLKGqDbJRwzoE34FEWtlhszD6IPEZw0jL+DhE=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net blob: 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -44,7 +44,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, label.file:focu
   border-bottom: 1px solid var(--line); background: var(--panel);
 }
 .brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
-.brand b { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .02em; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .02em; }
 .brand small { color: var(--muted); font-size: 12px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
@@ -190,6 +190,7 @@ input.text { width: 100%; background: #232734; border: 1px solid var(--line); bo
 .sec.closed:not(.searching) h2::after { transform: rotate(-45deg); }
 .sec.closed:not(.searching) > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
+.sec-toggle { flex: 1; text-align: left; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .liftScore { position: absolute; top: 16px; right: 16px; font: 400 44px var(--font-display); color: #fff; text-shadow: 0 3px 14px rgba(0,0,0,.6); z-index: 4; text-align: right; line-height: 1.1; pointer-events: none; }
 .liftScore small { display: block; font: 600 13px var(--font-body); color: var(--muted); text-shadow: none; }
 .frozen { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(18,20,27,.8); border: 1px solid var(--warn); color: var(--warn); border-radius: 999px; padding: 2px 12px; font-size: 12px; z-index: 4; }
@@ -242,7 +243,7 @@ body.stream .stage { height: 100%; min-height: 0; }
 <body>
 <div class="app">
   <header class="bar">
-    <div class="brand"><b>Mirror Mocap</b><small>内蔵カメラ → 3Dアバター</small></div>
+    <div class="brand"><h1>Mirror Mocap</h1><small>内蔵カメラ → 3Dアバター</small></div>
     <div class="chips" aria-label="トラッキング状態">
       <span class="chip" id="chipBody">体</span>
       <span class="chip" id="chipFace">顔</span>
@@ -2397,15 +2398,17 @@ let closedSecs; try { closedSecs = JSON.parse(localStorage.getItem(CLOSED_KEY));
 closedSecs = Array.isArray(closedSecs) ? closedSecs : CLOSED_DEFAULT;
 document.querySelectorAll('.panel .sec > h2').forEach(h => {
   const sec = h.parentElement, name = h.textContent.trim();
-  const set = (closed) => { sec.classList.toggle('closed', closed); h.setAttribute('aria-expanded', String(!closed)); };
-  h.tabIndex = 0; h.setAttribute('role', 'button'); set(closedSecs.includes(name));
+  // a real button inside the heading: screen readers announce "heading, button, collapsed / expanded"
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sec-toggle'; btn.textContent = name;
+  h.textContent = ''; h.append(btn);
+  const set = (closed) => { sec.classList.toggle('closed', closed); btn.setAttribute('aria-expanded', String(!closed)); };
+  set(closedSecs.includes(name));
   const toggle = () => {
     set(!sec.classList.contains('closed'));
     closedSecs = [...document.querySelectorAll('.panel .sec.closed > h2')].map(x => x.textContent.trim());
     try { localStorage.setItem(CLOSED_KEY, JSON.stringify(closedSecs)); } catch {}
   };
-  h.onclick = toggle;
-  h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+  h.onclick = toggle; // the whole row, arrow included (the button inside gives keyboard and screen-reader access)
 });
 
 

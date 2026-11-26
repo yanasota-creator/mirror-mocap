@@ -6,6 +6,9 @@
 |---|---|---|
 | `build.py` | `src/` のファイルをつなぎ合わせて `index.html` を作る（Python の標準機能だけ）。CSP の指紋も自動で入れる | `python3 tools/build.py`（`--check` で組み立て済みかとライブラリの指紋を確認、`--sri` で指紋を出し直す） |
 | `test_all.py` | 下の全部のテストを順に流す | `python3 tools/test_all.py` |
+| `webtest/a11y.js` | 使いやすさの点検（axe）。ラベル・文字の色の差・見出し・役割の付け方など。`test_all.py --a11y` でも流れる | `cd tools/webtest && node a11y.js` |
+| `webtest/lib.js` | ブラウザのテストの共通部分（Webサーバー、CDN の代わりに node_modules のファイルを返す） | ほかのテストから使う |
+| `webtest/eslint.config.mjs` | コード点検（ESLint）の設定。`test_all.py` が index.html のスクリプトを取り出して点検する | `test_all.py` から使う |
 | `webtest/smoke.js` | Web版をブラウザ（Playwright の Chromium）で自動操作して、主な機能を確かめるテスト。結果を ○／× で出す | 下の「Web版のテスト」 |
 | `unity-stubs/` | Unity がなくても `MirrorMocapReceiver.cs` のコンパイルを確かめるための、Unity と UniVRM の簡易部品（スタブ） | `tools/unity-stubs/check.sh`（`mono-mcs` が必要） |
 | `test_bridge.py` | ブリッジ（bridge.py）の自動テスト。接続できるページ・接続コード・壊れたデータ・上限など15項目 | `python3 tools/test_bridge.py` |
@@ -15,7 +18,7 @@
 ```bash
 python3 tools/test_all.py
 ```
-組み立て・ライブラリの指紋（SRI）の確認 → スクリプトの文法 → PCブリッジ → Web版（ブラウザ）の順に流して、最後に ○／× を出します。ブラウザのテストを省くときは `--quick` を付けます。GitHub に送ると、同じテストが GitHub 側でも自動で走ります（`.github/workflows/test.yml`。結果はリポジトリの「Actions」タブ）。
+組み立て・ライブラリの指紋（SRI）の確認 → スクリプトの文法 → PCブリッジ → Web版（ブラウザ）の順に流して、最後に ○／× を出します。ブラウザのテストを省くときは `--quick`、使いやすさの点検（axe、GPU のない環境では数分かかる）も流すときは `--a11y` を付けます。GitHub に送ると、同じテストが GitHub 側でも自動で走ります（`.github/workflows/test.yml`。結果はリポジトリの「Actions」タブ）。
 
 ## Web版のテスト
 最初に1回だけ、テスト用の部品を入れます。

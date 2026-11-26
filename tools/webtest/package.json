@@ -9,6 +9,7 @@
     "three": "0.170.0"
   },
   "devDependencies": {
+    "axe-core": "4.10.2",
     "eslint": "9.39.1",
     "globals": "15.15.0"
   }
