@@ -162,6 +162,8 @@ body.stream .main { grid-template-columns: 1fr; }
 .sec.closed h2::after { transform: rotate(-45deg); }
 .sec.closed > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
+.liftScore { position: absolute; top: 16px; right: 16px; font: 400 44px var(--font-display); color: #fff; text-shadow: 0 3px 14px rgba(0,0,0,.6); z-index: 4; text-align: right; line-height: 1.1; pointer-events: none; }
+.liftScore small { display: block; font: 600 13px var(--font-body); color: var(--muted); text-shadow: none; }
 .frozen { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(18,20,27,.8); border: 1px solid var(--warn); color: var(--warn); border-radius: 999px; padding: 2px 12px; font-size: 12px; z-index: 4; }
 body.stream .frozen { display: none; }
 .countdown { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 400 120px var(--font-display); color: #fff; text-shadow: 0 4px 24px rgba(0,0,0,.6); z-index: 4; }
@@ -245,6 +247,7 @@ body.stream .stage { height: 100%; min-height: 0; }
       </div>
 
       <div class="countdown" id="countdown" hidden aria-live="assertive"></div>
+      <div class="liftScore" id="liftScore" hidden></div>
       <div class="frozen" id="frozenBadge" hidden>ポーズ固定中（Space で解除）</div>
       <button type="button" class="btn stream-exit" id="streamExit" hidden>配信モードを終わる（Esc）</button>
       <div class="toast" id="toast" role="alert" hidden><b id="toastTitle"></b><span id="toastBody"></span><button type="button" id="toastClose">閉じる</button></div>
@@ -383,8 +386,10 @@ body.stream .stage { height: 100%; min-height: 0; }
           <option value="white">白</option>
           <option value="black">黒</option>
           <option value="image">画像を読み込む…</option>
+          <option value="video">動画を読み込む…</option>
         </select>
         <input type="file" id="bgFile" accept="image/*" hidden>
+        <input type="file" id="bgVideoFile" accept="video/*" hidden>
         <label for="optLight">照明</label>
         <select id="optLight" aria-label="照明">
           <option value="studio" selected>スタジオ（既定）</option>
@@ -440,10 +445,13 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" data-prop="mic">マイク</button>
           <button type="button" class="btn sm" data-prop="light">ペンライト</button>
           <button type="button" class="btn sm" data-prop="heart">ハート</button>
+          <button type="button" class="btn sm" data-prop="wand">魔法の杖</button>
+          <button type="button" class="btn sm" data-prop="star">星</button>
           <button type="button" class="btn sm" id="propClear">全部消す</button>
         </div>
+        <button type="button" class="btn" id="liftBtn">リフティングゲーム</button>
         <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
-        <p class="hint">手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。マウスや指でドラッグしても動かせます（離すと投げられます）。</p>
+        <p class="hint">リフティングゲーム：頭の上からボールが落ちてきます。頭や手で打ち上げて、床に落とさずに何回続くか数えます。<br>手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。マウスや指でドラッグしても動かせます（離すと投げられます）。</p>
       </section>
 
       <section class="sec">
@@ -1715,10 +1723,16 @@ function applyBackground() {
   if (v === 'image' && bgTex) { fitBackground(); scene.background = bgTex; }
   else scene.background = new THREE.Color(studio || v === 'image' ? STUDIO_BG : BG_COLORS[v]);
 }
-$('#optBg').onchange = () => { if ($('#optBg').value === 'image' && !bgTex) $('#bgFile').click(); applyBackground(); };
+$('#optBg').onchange = () => {
+  const v = $('#optBg').value;
+  if (v === 'video') { $('#optBg').value = bgTex ? 'image' : 'studio'; $('#bgVideoFile').click(); applyBackground(); return; }
+  if (v === 'image' && !bgTex) $('#bgFile').click();
+  applyBackground();
+};
 $('#bgFile').onchange = (e) => {
   const f = e.target.files[0]; if (!f) { if (!bgTex) { $('#optBg').value = 'studio'; applyBackground(); } return; }
   new THREE.TextureLoader().load(URL.createObjectURL(f), (tex) => {
+    bgVideo?.pause(); bgVideo = null;
     bgTex?.dispose(); tex.colorSpace = THREE.SRGBColorSpace; bgTex = tex;
     $('#optBg').value = 'image'; applyBackground();
   }, undefined, () => toast('画像を読み込めませんでした', 'jpg / png / webp の画像を選んでください。'));
@@ -1871,6 +1885,15 @@ function makeProp(kind) {
     stick.position.y = 0.05;
     const grip_ = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.08, 16), mat(0x1c1e25));
     grip_.position.y = -0.1; g.add(stick, grip_); g.userData.glow = stick.material; r = 0.075;
+  } else if (kind === 'wand') {
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.01, 0.26, 12), mat(0x5b3a8c, { metalness: 0.3 }));
+    const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.022), new THREE.MeshStandardMaterial({ color: 0xfff1a8, emissive: 0xffd84d, emissiveIntensity: 2 }));
+    tip.position.y = 0.14; g.add(stick, tip); g.userData.tip = tip; r = 0.07;
+  } else if (kind === 'star') {
+    const sh = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + Math.PI / 2, rr = i % 2 ? 0.028 : 0.065; (i ? sh.lineTo : sh.moveTo).call(sh, Math.cos(a) * rr, Math.sin(a) * rr); }
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.022, bevelEnabled: true, bevelSize: 0.006, bevelThickness: 0.006, bevelSegments: 2 }); geo.center();
+    g.add(new THREE.Mesh(geo, mat(0xffd23f, { metalness: 0.4, roughness: 0.3, emissive: 0x332200 })));
   } else if (kind === 'heart') {
     const sh = new THREE.Shape();
     sh.moveTo(0, -0.06); sh.bezierCurveTo(-0.09, 0, -0.07, 0.07, 0, 0.035); sh.bezierCurveTo(0.07, 0.07, 0.09, 0, 0, -0.06);
@@ -1914,13 +1937,20 @@ function updateHands(dt, now) {
       for (const p of props) { if (p.held) continue; const d = p.mesh.position.distanceTo(h.pos) - p.r; if (d < 0.09 && d < bd) { bd = d; best = p; } }
       if (best) {
         best.held = s; h.holding = best; hb.attach(best.mesh); best.vel.set(0, 0, 0); best.spin.set(0, 0, 0);
-        if (best.kind === 'mic' || best.kind === 'light') holdUpright(best.mesh, s);
+        if (best.kind === 'mic' || best.kind === 'light' || best.kind === 'wand') holdUpright(best.mesh, s);
       }
     }
     h.wasClosed = closed;
   }
 }
 function stepProps(dt) {
+  // small steps so a fast ball can't pass through the head between two frames
+  const n = Math.min(30, Math.ceil(dt / (1 / 120))), colliders = bodyColliders();
+  for (let i = 0; i < n; i++) stepPropsOnce(dt / n, colliders);
+  const hue = (performance.now() / 4000) % 1;
+  for (const p of props) if (p.mesh.userData.glow) p.mesh.userData.glow.emissive.setHSL(hue, 1, 0.55);
+}
+function stepPropsOnce(dt, colliders) {
   const gravity = $('#optGravity').checked;
   for (const p of props) {
     if (p.held || p === drag.p) continue;
@@ -1928,19 +1958,18 @@ function stepProps(dt) {
     if (gravity) p.vel.y -= 9.8 * dt;
     else p.vel.multiplyScalar(Math.exp(-dt * 1.6));
     m.position.addScaledVector(p.vel, dt);
-    // open hands push free props
-    for (const s of SIDES) {
-      if (hands[s].holding === p || !hands[s].prev) continue;
-      const d = _a.copy(m.position).sub(hands[s].pos), dist = d.length(), minD = p.r + 0.045;
-      if (dist < minD && dist > 1e-6) {
-        m.position.addScaledVector(d, (minD - dist) / dist);
-        const vn = hands[s].vel.dot(d) / dist;
-        if (vn > 0) p.vel.addScaledVector(d, vn / dist * 1.1);
-        p.spin.add(_b.crossVectors(d, hands[s].vel).multiplyScalar(4));
-      }
-    }
     p.spin.multiplyScalar(Math.exp(-dt * 0.8));
     const w = p.spin.length(); if (w > 1e-4) m.quaternion.premultiply(_tmp.setFromAxisAngle(_b.copy(p.spin).divideScalar(w), w * dt));
+  }
+  // the avatar's head, chest and hands are solid: free props bounce off them (heading a ball works)
+  for (const c of colliders) for (const p of props) {
+    if (p.held || p === drag.p) continue;
+    const d = _a.copy(p.mesh.position).sub(c.pos), dist = d.length(), minD = p.r + c.r;
+    if (dist < minD && dist > 1e-6) {
+      d.divideScalar(dist); p.mesh.position.addScaledVector(d, minD - dist);
+      const rel = p.vel.clone().sub(c.vel), vn = rel.dot(d);
+      if (vn < 0) { p.vel.addScaledVector(d, -vn * 1.75); p.spin.add(_b.crossVectors(d, rel).multiplyScalar(3)); if (c.hit && vn < -0.4) onBodyHit(p, c); } // a real touch, not resting on it
+    }
   }
   // props push each other apart
   for (let i = 0; i < props.length; i++) for (let j = i + 1; j < props.length; j++) {
@@ -1960,8 +1989,6 @@ function stepProps(dt) {
     if (hr > 2.3) { m.position.x *= 2.3 / hr; m.position.z *= 2.3 / hr; p.vel.x *= -0.5; p.vel.z *= -0.5; }
     if (m.position.y > 4) { m.position.y = 4; p.vel.y = -Math.abs(p.vel.y) * 0.5; }
   }
-  const hue = (performance.now() / 4000) % 1;
-  for (const p of props) if (p.mesh.userData.glow) p.mesh.userData.glow.emissive.setHSL(hue, 1, 0.55);
 }
 
 /* sticks (mic, pen light) sit across the fist, sticking out on the thumb side */
@@ -2608,6 +2635,89 @@ function applyVmcIn(now) {
 }
 $('#optVmcIn').onchange = () => { vmcIn.hipsScale = null; if ($('#optVmcIn').checked && !$('#optBridge').checked) { $('#optBridge').checked = true; $('#optBridge').onchange(); } };
 
+
+/* ---- solid parts of the avatar for props: head / chest from the bones; hands come from updateHands ---- */
+const colliderState = { head: { pos: new V3(), prev: null, vel: new V3() }, chest: { pos: new V3(), prev: null, vel: new V3() } };
+let lastColliderDt = 1 / 60;
+function bodyColliders() {
+  const out = [];
+  const head = avatar?.bone('head'), chest = avatar?.bone('chest') ?? avatar?.bone('spine');
+  const k = fxState.head ? THREE.MathUtils.clamp((fxState.head.top - fxState.head.eyeY) / 0.15, 0.6, 1.8) : 1;
+  for (const [name, bone, r, up] of [['head', head, 0.11 * k, 0.09 * k], ['chest', chest, 0.13, 0.02]]) {
+    if (!bone) continue;
+    const st = colliderState[name];
+    bone.getWorldPosition(st.pos); st.pos.y += up;
+    if (st.prev) st.vel.lerp(_b.copy(st.pos).sub(st.prev).divideScalar(lastColliderDt), 0.4); st.prev = (st.prev ?? new V3()).copy(st.pos);
+    out.push({ name, pos: st.pos, vel: st.vel, r, hit: true });
+  }
+  for (const s of SIDES) if (hands[s].prev && !hands[s].holding) out.push({ name: s, pos: hands[s].pos, vel: hands[s].vel, r: 0.05, hit: true });
+  return out;
+}
+
+/* ---- lifting game: keep the ball up with your head and hands ---- */
+const lift = { ball: null, count: 0, best: 0, lastHit: 0 };
+function onBodyHit(p, c) {
+  if (p !== lift.ball) return;
+  const now = performance.now();
+  if (now - lift.lastHit < 250) return; // one touch, not one per frame
+  lift.lastHit = now; lift.count++; lift.best = Math.max(lift.best, lift.count);
+  if (c.name === 'head' && p.vel.y < 2.2) p.vel.y = 2.2; // a header always pops it up a little
+  showLiftScore();
+  if (lift.count % 10 === 0) for (let i = 0; i < 6; i++) spawnFx('heart', new V3((Math.random() - 0.5) * 0.4, 0.25, 0.1), new V3((Math.random() - 0.5) * 0.2, 0.3, 0), 1.2, 0.05);
+}
+function showLiftScore(end) {
+  const el = $('#liftScore'); el.hidden = false;
+  el.innerHTML = end ? `${lift.count}<small>回でした（最高 ${lift.best} 回）</small>` : `${lift.count}<small>リフティング（最高 ${lift.best}）</small>`;
+}
+function startLift() {
+  if (lift.ball) { lift.ball.mesh.removeFromParent(); props.splice(props.indexOf(lift.ball), 1); }
+  const n = props.length; spawnProp('ball'); if (props.length === n) return; // no room for another prop
+  const b = props.at(-1);
+  const head = avatar?.bone('head')?.getWorldPosition(new V3()) ?? new V3(0, 1.4, 0);
+  b.mesh.position.set(head.x, head.y + 0.6, head.z + 0.03); b.vel.set(0, 0, 0);
+  lift.ball = b; lift.count = 0; lift.lastHit = 0;
+  if (!$('#optGravity').checked) $('#optGravity').checked = true;
+  showLiftScore();
+}
+function stepLift() {
+  const b = lift.ball; if (!b) return;
+  if (!props.includes(b)) { lift.ball = null; return; }
+  if (b.mesh.position.y <= b.r + 0.002 && !b.held) { showLiftScore(true); lift.ball = null; setTimeout(() => { if (!lift.ball) $('#liftScore').hidden = true; }, 4000); }
+}
+$('#liftBtn').onclick = startLift;
+
+/* ---- magic wand: a sparkle trail from the tip while it moves ---- */
+const _tip = new V3();
+const wandPrev = new WeakMap();
+function stepWands(now) {
+  for (const p of props) {
+    const tip = p.mesh.userData.tip; if (!tip) continue;
+    tip.getWorldPosition(_tip);
+    const prev = wandPrev.get(p); wandPrev.set(p, _tip.clone());
+    if (!prev || prev.distanceTo(_tip) < 0.01 || !avatar) continue;
+    fxTex.spark ??= weatherTexture('sparkle');
+    const head = avatar.bone('head'); if (!head) continue;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTex.spark, transparent: true, depthWrite: false, color: new THREE.Color().setHSL((now * 0.2) % 1, 0.8, 0.7) }));
+    sp.position.copy(_tip); sp.scale.setScalar(0.04 + Math.random() * 0.03); scene.add(sp);
+    fxList.push({ sp, vel: new V3((Math.random() - 0.5) * 0.1, -0.05, (Math.random() - 0.5) * 0.1), life: 0.8, age: 0, size: sp.scale.x });
+  }
+}
+
+/* ---- video background ---- */
+let bgVideo = null;
+$('#bgVideoFile').onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) { if (!bgVideo) { $('#optBg').value = 'studio'; applyBackground(); } return; }
+  bgVideo?.pause();
+  const v = document.createElement('video'); v.src = URL.createObjectURL(f); v.loop = true; v.muted = true; v.playsInline = true;
+  v.play().then(() => {
+    bgTex?.dispose(); bgVideo = v;
+    const tex = new THREE.VideoTexture(v); tex.colorSpace = THREE.SRGBColorSpace; tex.image = v;
+    bgTex = tex; bgTex.image.width = v.videoWidth; bgTex.image.height = v.videoHeight; // for "cover" fitting
+    $('#optBg').value = 'image'; applyBackground();
+  }).catch(() => toast('動画を再生できませんでした', 'mp4 (H.264) か webm を試してください。'));
+};
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -2819,7 +2929,10 @@ function bvhCapture(now) {
 }
 
 function extrasAfterUpdate(dt, now) {
+  lastColliderDt = Math.max(dt, 1e-3);
   followCamera();
+  stepWands(now);
+  stepLift();
   stepWeather(dt, now);
   stepFx(dt, now);
   stepBubble(now);
@@ -2841,7 +2954,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, lift, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
