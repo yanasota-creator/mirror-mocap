@@ -11,6 +11,8 @@ which forwards it as OSC packets. Standard library only (no pip install needed).
 
 Only pages from the allowed origins may connect (the public web version and pages on this PC),
 so other websites cannot drive your avatar or write to your VRChat chatbox.
+A page opened as a file (file://) has no origin of its own ("null", which any website can also produce
+with a sandboxed frame), so it must also send the connection code shown at startup (kept in bridge-code.txt).
 """
 import argparse
 import asyncio
@@ -19,12 +21,44 @@ import hashlib
 import json
 import math
 import re
+import secrets
 import socket
 import struct
 import time
+from collections import deque
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-DEFAULT_ORIGINS = ["https://yanasota-creator.github.io", "http://localhost", "http://127.0.0.1", "null"]
+DEFAULT_ORIGINS = ["https://yanasota-creator.github.io", "http://localhost", "http://127.0.0.1"]
+CODE_FILE = Path(__file__).with_name("bridge-code.txt")
+CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: easy to read and type
+MAX_MESSAGE = 1 << 20  # 1 MB is far more than a pose needs
+MAX_CLIENTS = 8
+
+
+def load_code(path: Path = CODE_FILE) -> str:
+    """The connection code for pages opened from a file. Made once and kept, so it only has to be typed once."""
+    try:
+        code = normalize_code(path.read_text(encoding="utf-8"))
+        if len(code) == 8:
+            return code
+    except OSError:
+        pass
+    code = "".join(secrets.choice(CODE_CHARS) for _ in range(8))
+    try:
+        path.write_text(code + "\n", encoding="utf-8")
+    except OSError:
+        pass  # read-only folder: the code just changes at every start
+    return code
+
+
+def normalize_code(s: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(s).upper())
+
+
+def format_code(code: str) -> str:
+    return code[:4] + "-" + code[4:]
 
 # --------------------------------------------------------------------------- OSC encoding
 
@@ -134,13 +168,17 @@ def _read_str(b: bytes, i: int):
     return b[i:j].decode("utf-8", "replace"), (j + 4) & ~3
 
 
-def osc_parse(b: bytes):
+def osc_parse(b: bytes, depth: int = 0):
     """OSC packet (message or bundle) -> list of (address, args)."""
     if b.startswith(b"#bundle\0"):
+        if depth > 4:
+            raise ValueError("bundles nested too deep")
         out, i = [], 16
         while i + 4 <= len(b):
             n = struct.unpack(">i", b[i:i + 4])[0]
-            out += osc_parse(b[i + 4:i + 4 + n]); i += 4 + n
+            if n <= 0:
+                raise ValueError("bad bundle element size")
+            out += osc_parse(b[i + 4:i + 4 + n], depth + 1); i += 4 + n
         return out
     addr, i = _read_str(b, 0)
     if i >= len(b) or b[i:i + 1] != b",":
@@ -159,7 +197,10 @@ def osc_parse(b: bytes):
 
 
 class VMCIn(asyncio.DatagramProtocol):
-    """Collects bones and blendshapes from a VMC sender and hands them to the web page ~30 times a second."""
+    """Collects bones and blendshapes from a VMC sender and hands them to the web page ~30 times a second.
+    With --vmc-in-lan anything on the LAN can send here, so names and counts are capped."""
+
+    MAX_BONES, MAX_BLEND = 64, 128
 
     def __init__(self, bridge):
         self.bridge, self.bones, self.blend, self.last = bridge, {}, {}, 0.0
@@ -167,20 +208,30 @@ class VMCIn(asyncio.DatagramProtocol):
     def datagram_received(self, data, addr):
         try:
             msgs = osc_parse(data)
-        except (ValueError, struct.error, IndexError):
+        except (ValueError, struct.error, IndexError, RecursionError):
             return
         for a, args in msgs:
-            if a == "/VMC/Ext/Bone/Pos" and len(args) >= 8 and isinstance(args[0], str):
-                self.bones[args[0]] = [round(float(v), 5) for v in args[1:8]]
-            elif a == "/VMC/Ext/Root/Pos" and len(args) >= 8:
+            if a == "/VMC/Ext/Bone/Pos" and len(args) >= 8 and _is_name(args[0]) and _all_finite(args[1:8]):
+                if args[0] in self.bones or len(self.bones) < self.MAX_BONES:
+                    self.bones[args[0]] = [round(float(v), 5) for v in args[1:8]]
+            elif a == "/VMC/Ext/Root/Pos" and len(args) >= 8 and _all_finite(args[1:8]):
                 self.bones["__root"] = [round(float(v), 5) for v in args[1:8]]
-            elif a == "/VMC/Ext/Blend/Val" and len(args) >= 2 and isinstance(args[0], str):
-                self.blend[args[0]] = round(float(args[1]), 4)
+            elif a == "/VMC/Ext/Blend/Val" and len(args) >= 2 and _is_name(args[0]) and _all_finite(args[1:2]):
+                if args[0] in self.blend or len(self.blend) < self.MAX_BLEND:
+                    self.blend[args[0]] = round(max(0.0, min(1.0, float(args[1]))), 4)
         now = time.monotonic()
         if now - self.last >= 1 / 30 and (self.bones or self.blend):
             self.last = now
             self.bridge.broadcast({"type": "vmc", "bones": self.bones, "blend": self.blend})
             self.bridge.vmc_in_frames += 1
+
+
+def _is_name(v) -> bool:
+    return isinstance(v, str) and 0 < len(v) <= 64
+
+
+def _all_finite(vals) -> bool:
+    return all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in vals)
 
 
 # --------------------------------------------------------------------------- minimal WebSocket server
@@ -196,6 +247,27 @@ class Bridge:
         self.writers = set()
         self.viewers = set()
         self.vmc_in_frames = 0
+        self.code = getattr(args, "code", None) or load_code()
+        self.bad_codes = deque()  # times of wrong codes: after 5 in a minute, file pages are refused for a while
+
+    def check_access(self, origin: str, path: str):
+        """-> (allowed, reason). Pages from the allowed origins connect as they are; file:// pages need the code."""
+        if any(origin == o or origin.startswith(o + ":") for o in self.args.allow_origin if o != "null"):
+            return True, ""
+        if origin == "null":
+            if "null" in self.args.allow_origin:  # explicitly allowed with --allow-origin null
+                return True, ""
+            now = time.monotonic()
+            while self.bad_codes and now - self.bad_codes[0] > 60:
+                self.bad_codes.popleft()
+            if len(self.bad_codes) >= 5:
+                return False, "接続コードの間違いが続いたので、1分間ファイルからの接続を止めています"
+            code = normalize_code(parse_qs(urlsplit(path).query).get("code", [""])[0])
+            if code and secrets.compare_digest(code, self.code):
+                return True, ""
+            self.bad_codes.append(now)
+            return False, "ファイルから開いたページ：接続コードが違うか、入力されていません" if code else "ファイルから開いたページ：接続コードを入力してください"
+        return False, f"許可していないページから: {origin or '不明'}"
 
     def broadcast(self, obj):
         text = json.dumps(obj, separators=(",", ":"))
@@ -213,10 +285,15 @@ class Bridge:
                 pass
 
     def handle(self, text: str, writer=None):
+        """One message from a page. Malformed ones are dropped instead of ending the connection."""
         try:
             msg = json.loads(text)
-        except ValueError:
-            return
+            if isinstance(msg, dict):
+                self._handle(msg, text, writer)
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError, struct.error, OverflowError):
+            pass
+
+    def _handle(self, msg: dict, text: str, writer):
         kind = msg.get("type", "frame")
         if kind == "hello" and msg.get("role") == "viewer" and writer is not None:
             self.viewers.add(writer)  # an OBS browser-source page that only shows the avatar
@@ -235,7 +312,8 @@ class Bridge:
             if self.vrc:
                 self.send(vrchat_packets(msg), self.vrc)
         elif kind == "chat" and self.vrc:
-            text = str(msg.get("text", ""))[:144]  # VRChat's chatbox limit
+            # VRChat's chatbox limit; control characters (other than line breaks) are dropped
+            text = re.sub(r"[\x00-\x09\x0b-\x1f\x7f]", "", str(msg.get("text", "")))[:144]
             self.send([osc_message("/chatbox/input", text, True, bool(msg.get("sound", True)))], self.vrc)
         elif kind == "typing" and self.vrc:
             self.send([osc_message("/chatbox/typing", bool(msg.get("on")))], self.vrc)
@@ -258,9 +336,14 @@ class Bridge:
         lines = head.decode("latin-1").split("\r\n")
         hdr = {k.strip().lower(): v.strip() for k, _, v in (l.partition(":") for l in lines[1:] if ":" in l)}
         origin = hdr.get("origin", "")
-        allowed = any(origin == o or origin.startswith(o + ":") for o in self.args.allow_origin)
-        if hdr.get("upgrade", "").lower() != "websocket" or "sec-websocket-key" not in hdr or not allowed:
-            print(f"接続を拒否しました（許可していないページから: {origin or '不明'}）", flush=True)
+        path = lines[0].split(" ")[1] if lines[0].count(" ") >= 2 else "/"
+        allowed, reason = self.check_access(origin, path)
+        if hdr.get("upgrade", "").lower() != "websocket" or "sec-websocket-key" not in hdr:
+            allowed, reason = False, "WebSocket ではない接続"
+        elif allowed and self.clients >= MAX_CLIENTS:
+            allowed, reason = False, f"同時に接続できるのは {MAX_CLIENTS} 個までです"
+        if not allowed:
+            print(f"接続を拒否しました（{reason}）", flush=True)
             writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"); await writer.drain(); writer.close(); return
         accept = base64.b64encode(hashlib.sha1((hdr["sec-websocket-key"] + WS_GUID).encode()).digest()).decode()
         writer.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -278,15 +361,19 @@ class Bridge:
                     n = struct.unpack(">H", await reader.readexactly(2))[0]
                 elif n == 127:
                     n = struct.unpack(">Q", await reader.readexactly(8))[0]
-                if n > 1 << 20:
-                    break  # 1 MB per frame is far more than a pose needs
-                mask = await reader.readexactly(4) if masked else b"\0\0\0\0"
-                data = bytes(c ^ mask[i % 4] for i, c in enumerate(await reader.readexactly(n)))
+                if n > MAX_MESSAGE or not masked:
+                    break  # too big, or not from a browser (browsers always mask what they send)
+                mask = await reader.readexactly(4)
+                data = _unmask(await reader.readexactly(n), mask)
                 if op == 8:
                     break
                 if op == 9:  # ping -> pong
-                    writer.write(bytes([0x8A, len(data)]) + data); await writer.drain(); continue
+                    if n <= 125:
+                        writer.write(bytes([0x8A, n]) + data); await writer.drain()
+                    continue
                 if op in (0, 1):
+                    if len(buf) + len(data) > MAX_MESSAGE:
+                        break  # a message split into pieces may not grow past the limit either
                     buf += data
                     if b0 & 0x80:  # final fragment
                         self.handle(buf.decode("utf-8", "replace"), writer); buf = b""
@@ -325,6 +412,13 @@ class Bridge:
             self.vmc_in_frames = 0
 
 
+def _unmask(data: bytes, mask: bytes) -> bytes:
+    # XOR the whole payload at once (byte by byte in Python is slow for big messages)
+    n = len(data)
+    key = int.from_bytes((mask * (n // 4 + 1))[:n], "big")
+    return (int.from_bytes(data, "big") ^ key).to_bytes(n, "big") if n else b""
+
+
 def _addr(s: str):
     host, _, port = s.rpartition(":")
     return (host or "127.0.0.1", int(port))
@@ -339,6 +433,7 @@ async def main_async(args):
     server = await asyncio.start_server(br.client, "127.0.0.1", args.ws_port)
     print(f"ブリッジ起動: Web版からの接続を ws://127.0.0.1:{args.ws_port} で待っています（Ctrl+C で終了）", flush=True)
     print(f"  VMC 送信先: {_fmt(br.vmc) or 'オフ'} / VRChat 送信先: {_fmt(br.vrc) or 'オフ'}", flush=True)
+    print(f"  ファイルから開いたページ用の接続コード: {format_code(br.code)}（公開版・localhost なら入力不要）", flush=True)
     if args.vmc_in:
         loop = asyncio.get_running_loop()
         try:

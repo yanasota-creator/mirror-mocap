@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
+     tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src @SCRIPT_HASHES@ https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -205,6 +209,10 @@
         <h2>外部連携</h2>
         <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
         <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
+        <div id="bridgeCodeRow" hidden>
+          <label for="bridgeCode">接続コード<small>（ファイルから開いたときだけ必要。bridge.py の画面に出ている8文字）</small></label>
+          <input type="text" id="bridgeCode" placeholder="ABCD-EFGH" autocomplete="off" spellcheck="false" maxlength="12">
+        </div>
         <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
         <p class="status" id="vmcInStatus" aria-live="polite"></p>
         <label for="vrcParam">VRChat：表情ボタンで送るパラメータ名</label>
@@ -367,6 +375,14 @@
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
     "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js",
     "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js"
+  },
+  "integrity": {
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js": "sha384-GY5FqjttLCFRt/McQbyaVdCk2O1IQtOeX8Py6NfD89BIAsIyJFRl4UgSXrk2vXAk",
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js": "sha384-aJoe4qqS/DgF2jh9njAuvA6QIveJYoCuYOfYjdFY8P3eawzmc9bEQ40jq2TvOyuP",
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js": "sha384-Lq1Wl94so5JCKGDvezrdVMJhdeKQkwb8iwRo59QrPPd61CnrCJZLxYmFlQ8ZuOKR",
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-wOjwauvHlJO7K6APr7FmMGH2nupQa3Ndzas9bJZhsAMOK055efJud8ns4aYmASKv",
+    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js": "sha384-GuN5QzQYBt5R8daMEdf+CT8kH1kC8e3azAfOLEcCeE/+AG8Ta8mM57zaQ0eO2wIG",
+    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js": "sha384-5gIQYATFFKeJpZ5KsJ286pCgj7J1j69BNYNpjx6BXAm7vtwoGUuptn1K0QAG0+gk"
   }
 }
 </script>
@@ -386,6 +402,22 @@
 <!-- @include js/15-export-bridge-recording.js -->
 <!-- @include js/16-face-extras.js -->
 <!-- @include js/99-boot.js -->
+</script>
+<!-- If the libraries can't be loaded (offline, or cdn.jsdelivr.net blocked), the page would just sit there: say why instead -->
+<div class="boot-fail" id="bootFail" role="alert" hidden>
+  <b>アプリの部品を読み込めませんでした</b>
+  <p>インターネット接続を確認して、ページを再読み込みしてください。学校や会社のネットワークでは、部品の配信元（cdn.jsdelivr.net）が遮断されていることがあります。</p>
+  <button type="button" class="btn" id="bootReload">再読み込み</button>
+</div>
+<script>
+(function () {
+  var shown = false;
+  function fail() { if (shown || window.__mocap) return; shown = true; document.getElementById('bootFail').hidden = false; }
+  document.getElementById('bootReload').addEventListener('click', function () { location.reload(); });
+  var app = document.querySelector('script[type=module]');
+  if (app) app.addEventListener('error', fail);
+  setTimeout(fail, 45000);
+})();
 </script>
 </body>
 </html>

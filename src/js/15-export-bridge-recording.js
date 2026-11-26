@@ -31,28 +31,45 @@ function exportTrackers() {
 
 /* ---- PC bridge (WebSocket -> bridge.py -> VMC / VRChat OSC) ---- */
 const BRIDGE_URL = 'ws://127.0.0.1:39541';
-const bridge = { ws: null, retry: null, last: 0 };
+const bridge = { ws: null, retry: null, last: 0, opened: false };
+// a page opened as a file has no origin the bridge can check, so it also sends the code bridge.py shows
+const FROM_FILE = location.protocol === 'file:', BRIDGE_CODE_KEY = 'mirror-mocap-bridge-code';
+const bridgeCode = () => $('#bridgeCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+if (FROM_FILE) {
+  $('#bridgeCodeRow').hidden = false;
+  try { $('#bridgeCode').value = localStorage.getItem(BRIDGE_CODE_KEY) ?? ''; } catch {}
+  $('#bridgeCode').onchange = () => {
+    try { localStorage.setItem(BRIDGE_CODE_KEY, bridgeCode()); } catch {}
+    if ($('#optBridge').checked) { clearTimeout(bridge.retry); bridge.ws?.close(); bridge.ws = null; connectBridge(); }
+  };
+}
 function bridgeStatus(text, cls = '') { const el = $('#bridgeStatus'); el.textContent = text; el.className = 'status ' + cls; }
 function connectBridge() {
   clearTimeout(bridge.retry);
   if (!$('#optBridge').checked || bridge.ws) return;
+  if (FROM_FILE && bridgeCode().length !== 8) { bridgeStatus('接続コード（8文字）を入力してください。bridge.py を起動した画面に出ています', 'bad'); return; }
   bridgeStatus('ブリッジに接続中…');
   let ws;
-  try { ws = new WebSocket(BRIDGE_URL); } catch { bridgeStatus('接続できませんでした', 'bad'); return; }
-  bridge.ws = ws;
-  ws.onopen = () => { bridgeStatus('接続中：動きを送っています', 'ok'); if (VIEWER) ws.send(JSON.stringify({ type: 'hello', role: 'viewer' })); };
+  try { ws = new WebSocket(FROM_FILE ? `${BRIDGE_URL}/?code=${bridgeCode()}` : BRIDGE_URL); } catch { bridgeStatus('接続できませんでした', 'bad'); return; }
+  bridge.ws = ws; bridge.opened = false;
+  ws.onopen = () => { bridge.opened = true; bridgeStatus('接続中：動きを送っています', 'ok'); if (VIEWER) ws.send(JSON.stringify({ type: 'hello', role: 'viewer' })); };
   ws.onmessage = (e) => {
     try {
       const m = JSON.parse(e.data);
       if (m.type === 'hello') bridgeStatus(`接続中：VMC → ${m.vmc ?? 'オフ'} ／ VRChat → ${m.vrchat ?? 'オフ'}${m.vmcIn ? ` ／ VMC受信 ポート${m.vmcIn}` : ''}`, 'ok');
-      else if (m.type === 'vmc') { vmcIn.frame = m; vmcIn.t = performance.now() / 1000; }
-      else if (m.type === 'frame' && VIEWER) { viewer.frame = m; viewer.t = performance.now() / 1000; }
+      else if (m.type === 'vmc') { vmcIn.frame = { bones: cleanBones(m.bones, 7), blend: cleanBlend(m.blend) }; vmcIn.t = performance.now() / 1000; }
+      else if (m.type === 'frame' && VIEWER) {
+        viewer.frame = { bones: cleanBones(m.bones, 4), pos: cleanBones(m.pos, 3), blend: cleanBlend(m.blend), model: typeof m.model === 'string' ? m.model : null };
+        viewer.t = performance.now() / 1000;
+      }
     } catch {}
   };
   ws.onclose = () => {
     bridge.ws = null;
     if (!$('#optBridge').checked) { bridgeStatus('オフ'); return; }
-    bridgeStatus('つながりません。PCで bridge.py を起動してください（3秒ごとに再接続します）', 'bad');
+    // a refused file page (wrong code) fails before opening, just like a bridge that isn't running
+    bridgeStatus(FROM_FILE && !bridge.opened ? 'つながりません。bridge.py が起動しているか、接続コードが合っているか確かめてください（3秒ごとに再接続します）'
+      : 'つながりません。PCで bridge.py を起動してください（3秒ごとに再接続します）', 'bad');
     bridge.retry = setTimeout(connectBridge, 3000);
   };
 }
@@ -60,6 +77,24 @@ $('#optBridge').onchange = () => {
   if ($('#optBridge').checked) connectBridge();
   else { clearTimeout(bridge.retry); bridge.ws?.close(); bridge.ws = null; bridgeStatus('オフ'); }
 };
+// what comes from the bridge is checked before it touches the avatar: a NaN in one bone would make the whole model vanish
+const NAME_RE = /^[A-Za-z0-9_.\- ]{1,64}$/;
+function cleanBones(src, n) {
+  const out = {};
+  if (src && typeof src === 'object') for (const k of Object.keys(src).slice(0, 96)) {
+    const v = src[k];
+    if (NAME_RE.test(k) && Array.isArray(v) && v.length >= n && v.slice(0, n).every(Number.isFinite)) out[k] = v.slice(0, n);
+  }
+  return out;
+}
+function cleanBlend(src) {
+  const out = {};
+  if (src && typeof src === 'object') for (const k of Object.keys(src).slice(0, 160)) {
+    const v = src[k];
+    if (NAME_RE.test(k) && Number.isFinite(v)) out[k] = Math.min(1, Math.max(0, v));
+  }
+  return out;
+}
 function bridgeSend(obj) { if (bridge.ws?.readyState === 1) { bridge.ws.send(JSON.stringify(obj)); return true; } return false; }
 function bridgeFrame(now) {
   if (VIEWER) return; // the viewer only shows what it receives

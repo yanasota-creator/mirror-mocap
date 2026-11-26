@@ -3,7 +3,8 @@
 
 src/index.html is the page skeleton. Every line of the form
     <!-- @include path -->
-is replaced by the contents of src/<path>. The result is one self-contained
+is replaced by the contents of src/<path>, and @SCRIPT_HASHES@ in the page's
+Content-Security-Policy by the fingerprints of its inline scripts. The result is one self-contained
 index.html, so the page still opens by double-clicking the file (a page opened
 from file:// cannot load other script files).
 
@@ -12,6 +13,8 @@ from file:// cannot load other script files).
 
 Edit the files in src/, never index.html directly: it is overwritten on build.
 """
+import base64
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -20,6 +23,13 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'src'
 OUT = ROOT / 'index.html'
 INCLUDE = re.compile(r'^<!-- @include (\S+) -->\n?$')
+INLINE_SCRIPT = re.compile(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', re.S)
+
+
+def script_hashes(html: str) -> str:
+    """CSP fingerprints of every script written in the page (the browser runs only scripts that match)."""
+    return ' '.join("'sha256-" + base64.b64encode(hashlib.sha256(body.encode('utf-8')).digest()).decode() + "'"
+                    for body in INLINE_SCRIPT.findall(html))
 
 
 def build() -> str:
@@ -33,7 +43,10 @@ def build() -> str:
         if part and not part.endswith('\n'):
             part += '\n'
         out.append(part)
-    return ''.join(out)
+    html = ''.join(out)
+    if '@SCRIPT_HASHES@' in html:
+        html = html.replace('@SCRIPT_HASHES@', script_hashes(html))
+    return html
 
 
 def main() -> int:

@@ -3,3 +3,4 @@ __pycache__/
 *.part
 .venv/
 node_modules/
+native/bridge/bridge-code.txt

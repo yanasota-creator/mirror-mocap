@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
+     tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-queCg4bDskXthZDmWTlheovsE0pjfTvGjcdjIoT4ZDc=' 'sha256-MWakDsH2/yYQIR0uApjiMwKY8ibQvxcZS2KcBIHhzIQ=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -155,6 +159,9 @@ body.stream .main { grid-template-columns: 1fr; }
 input.text { width: 100%; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .chat input { flex: 1; min-width: 0; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .status { font-size: 12px; color: var(--muted); margin: 0; }
+.boot-fail { position: fixed; z-index: 100; left: 50%; top: 16px; transform: translateX(-50%); width: min(520px, calc(100% - 32px));
+  background: var(--panel); border: 1px solid var(--warn); border-radius: 12px; padding: 14px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.boot-fail p { margin: 6px 0 10px; color: var(--muted); font-size: 13px; }
 .meter { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; font-size: 12px; color: var(--muted); }
 .meter i { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .meter i b { display: block; height: 100%; width: 0; background: var(--accent); }
@@ -409,6 +416,10 @@ body.stream .stage { height: 100%; min-height: 0; }
         <h2>外部連携</h2>
         <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
         <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
+        <div id="bridgeCodeRow" hidden>
+          <label for="bridgeCode">接続コード<small>（ファイルから開いたときだけ必要。bridge.py の画面に出ている8文字）</small></label>
+          <input type="text" id="bridgeCode" placeholder="ABCD-EFGH" autocomplete="off" spellcheck="false" maxlength="12">
+        </div>
         <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
         <p class="status" id="vmcInStatus" aria-live="polite"></p>
         <label for="vrcParam">VRChat：表情ボタンで送るパラメータ名</label>
@@ -571,6 +582,14 @@ body.stream .stage { height: 100%; min-height: 0; }
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
     "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js",
     "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js"
+  },
+  "integrity": {
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js": "sha384-GY5FqjttLCFRt/McQbyaVdCk2O1IQtOeX8Py6NfD89BIAsIyJFRl4UgSXrk2vXAk",
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js": "sha384-aJoe4qqS/DgF2jh9njAuvA6QIveJYoCuYOfYjdFY8P3eawzmc9bEQ40jq2TvOyuP",
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js": "sha384-Lq1Wl94so5JCKGDvezrdVMJhdeKQkwb8iwRo59QrPPd61CnrCJZLxYmFlQ8ZuOKR",
+    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-wOjwauvHlJO7K6APr7FmMGH2nupQa3Ndzas9bJZhsAMOK055efJud8ns4aYmASKv",
+    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js": "sha384-GuN5QzQYBt5R8daMEdf+CT8kH1kC8e3azAfOLEcCeE/+AG8Ta8mM57zaQ0eO2wIG",
+    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js": "sha384-5gIQYATFFKeJpZ5KsJ286pCgj7J1j69BNYNpjx6BXAm7vtwoGUuptn1K0QAG0+gk"
   }
 }
 </script>
@@ -3322,28 +3341,45 @@ function exportTrackers() {
 
 /* ---- PC bridge (WebSocket -> bridge.py -> VMC / VRChat OSC) ---- */
 const BRIDGE_URL = 'ws://127.0.0.1:39541';
-const bridge = { ws: null, retry: null, last: 0 };
+const bridge = { ws: null, retry: null, last: 0, opened: false };
+// a page opened as a file has no origin the bridge can check, so it also sends the code bridge.py shows
+const FROM_FILE = location.protocol === 'file:', BRIDGE_CODE_KEY = 'mirror-mocap-bridge-code';
+const bridgeCode = () => $('#bridgeCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+if (FROM_FILE) {
+  $('#bridgeCodeRow').hidden = false;
+  try { $('#bridgeCode').value = localStorage.getItem(BRIDGE_CODE_KEY) ?? ''; } catch {}
+  $('#bridgeCode').onchange = () => {
+    try { localStorage.setItem(BRIDGE_CODE_KEY, bridgeCode()); } catch {}
+    if ($('#optBridge').checked) { clearTimeout(bridge.retry); bridge.ws?.close(); bridge.ws = null; connectBridge(); }
+  };
+}
 function bridgeStatus(text, cls = '') { const el = $('#bridgeStatus'); el.textContent = text; el.className = 'status ' + cls; }
 function connectBridge() {
   clearTimeout(bridge.retry);
   if (!$('#optBridge').checked || bridge.ws) return;
+  if (FROM_FILE && bridgeCode().length !== 8) { bridgeStatus('接続コード（8文字）を入力してください。bridge.py を起動した画面に出ています', 'bad'); return; }
   bridgeStatus('ブリッジに接続中…');
   let ws;
-  try { ws = new WebSocket(BRIDGE_URL); } catch { bridgeStatus('接続できませんでした', 'bad'); return; }
-  bridge.ws = ws;
-  ws.onopen = () => { bridgeStatus('接続中：動きを送っています', 'ok'); if (VIEWER) ws.send(JSON.stringify({ type: 'hello', role: 'viewer' })); };
+  try { ws = new WebSocket(FROM_FILE ? `${BRIDGE_URL}/?code=${bridgeCode()}` : BRIDGE_URL); } catch { bridgeStatus('接続できませんでした', 'bad'); return; }
+  bridge.ws = ws; bridge.opened = false;
+  ws.onopen = () => { bridge.opened = true; bridgeStatus('接続中：動きを送っています', 'ok'); if (VIEWER) ws.send(JSON.stringify({ type: 'hello', role: 'viewer' })); };
   ws.onmessage = (e) => {
     try {
       const m = JSON.parse(e.data);
       if (m.type === 'hello') bridgeStatus(`接続中：VMC → ${m.vmc ?? 'オフ'} ／ VRChat → ${m.vrchat ?? 'オフ'}${m.vmcIn ? ` ／ VMC受信 ポート${m.vmcIn}` : ''}`, 'ok');
-      else if (m.type === 'vmc') { vmcIn.frame = m; vmcIn.t = performance.now() / 1000; }
-      else if (m.type === 'frame' && VIEWER) { viewer.frame = m; viewer.t = performance.now() / 1000; }
+      else if (m.type === 'vmc') { vmcIn.frame = { bones: cleanBones(m.bones, 7), blend: cleanBlend(m.blend) }; vmcIn.t = performance.now() / 1000; }
+      else if (m.type === 'frame' && VIEWER) {
+        viewer.frame = { bones: cleanBones(m.bones, 4), pos: cleanBones(m.pos, 3), blend: cleanBlend(m.blend), model: typeof m.model === 'string' ? m.model : null };
+        viewer.t = performance.now() / 1000;
+      }
     } catch {}
   };
   ws.onclose = () => {
     bridge.ws = null;
     if (!$('#optBridge').checked) { bridgeStatus('オフ'); return; }
-    bridgeStatus('つながりません。PCで bridge.py を起動してください（3秒ごとに再接続します）', 'bad');
+    // a refused file page (wrong code) fails before opening, just like a bridge that isn't running
+    bridgeStatus(FROM_FILE && !bridge.opened ? 'つながりません。bridge.py が起動しているか、接続コードが合っているか確かめてください（3秒ごとに再接続します）'
+      : 'つながりません。PCで bridge.py を起動してください（3秒ごとに再接続します）', 'bad');
     bridge.retry = setTimeout(connectBridge, 3000);
   };
 }
@@ -3351,6 +3387,24 @@ $('#optBridge').onchange = () => {
   if ($('#optBridge').checked) connectBridge();
   else { clearTimeout(bridge.retry); bridge.ws?.close(); bridge.ws = null; bridgeStatus('オフ'); }
 };
+// what comes from the bridge is checked before it touches the avatar: a NaN in one bone would make the whole model vanish
+const NAME_RE = /^[A-Za-z0-9_.\- ]{1,64}$/;
+function cleanBones(src, n) {
+  const out = {};
+  if (src && typeof src === 'object') for (const k of Object.keys(src).slice(0, 96)) {
+    const v = src[k];
+    if (NAME_RE.test(k) && Array.isArray(v) && v.length >= n && v.slice(0, n).every(Number.isFinite)) out[k] = v.slice(0, n);
+  }
+  return out;
+}
+function cleanBlend(src) {
+  const out = {};
+  if (src && typeof src === 'object') for (const k of Object.keys(src).slice(0, 160)) {
+    const v = src[k];
+    if (NAME_RE.test(k) && Number.isFinite(v)) out[k] = Math.min(1, Math.max(0, v));
+  }
+  return out;
+}
 function bridgeSend(obj) { if (bridge.ws?.readyState === 1) { bridge.ws.send(JSON.stringify(obj)); return true; } return false; }
 function bridgeFrame(now) {
   if (VIEWER) return; // the viewer only shows what it receives
@@ -3700,6 +3754,22 @@ window.__mocap = { get avatar() { return avatar; }, get running() { return runni
   },
   perfectSyncMap, ARKIT, Raycaster: THREE.Raycaster, blush, nod, swings, setExprLock, get exprLocked() { return exprLocked; }, get blend() { return lastBlend; },
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
+</script>
+<!-- If the libraries can't be loaded (offline, or cdn.jsdelivr.net blocked), the page would just sit there: say why instead -->
+<div class="boot-fail" id="bootFail" role="alert" hidden>
+  <b>アプリの部品を読み込めませんでした</b>
+  <p>インターネット接続を確認して、ページを再読み込みしてください。学校や会社のネットワークでは、部品の配信元（cdn.jsdelivr.net）が遮断されていることがあります。</p>
+  <button type="button" class="btn" id="bootReload">再読み込み</button>
+</div>
+<script>
+(function () {
+  var shown = false;
+  function fail() { if (shown || window.__mocap) return; shown = true; document.getElementById('bootFail').hidden = false; }
+  document.getElementById('bootReload').addEventListener('click', function () { location.reload(); });
+  var app = document.querySelector('script[type=module]');
+  if (app) app.addEventListener('error', fail);
+  setTimeout(fail, 45000);
+})();
 </script>
 </body>
 </html>
