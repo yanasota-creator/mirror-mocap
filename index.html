@@ -299,6 +299,8 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle">手と指<input type="checkbox" id="optHands" checked></label>
         <label class="toggle"><span>脚<small>膝と足首が映っているときだけ動かします</small></span><input type="checkbox" id="optLegs" checked></label>
         <label class="toggle"><span>ミラー<small>鏡のように同じ側の手が動きます</small></span><input type="checkbox" id="optMirror" checked></label>
+        <label class="toggle"><span>座りポーズ<small>脚が映っていないとき、椅子に座った形にします</small></span><input type="checkbox" id="optSit"></label>
+        <label class="toggle"><span>椅子を表示<small>座りポーズのときに椅子を置きます</small></span><input type="checkbox" id="optChair" checked></label>
         <label class="toggle"><span>体の位置も動かす<small>左右に動く・しゃがむとアバターも移動します（「正面リセット」の位置が基準）</small></span><input type="checkbox" id="optMove"></label>
         <div class="slider">
           <div class="top"><label for="optSmooth">なめらかさ</label><output id="smoothOut">45</output></div>
@@ -863,6 +865,10 @@ function worldFromBasis(name, T, restB) {
   // W = T * restB^-1 * Q0
   return T.clone().multiply(restB.clone().invert()).multiply(avatar.rest.q0[name] ?? IDENT);
 }
+// legs that the camera can't see: straight down, or bent as if sitting on a chair ("座りポーズ")
+const sit = { legsSeen: -1e9, amount: 0, chair: null };
+const isSitting = () => $('#optSit').checked && performance.now() / 1000 - sit.legsSeen > 1;
+const legRest = (lower) => isSitting() ? (lower ? new V3(0, -1, 0.06) : new V3(0, -0.08, 1)) : new V3(0, -1, 0);
 const restArm = (s, lower) => new V3((s === 'left' ? 1 : -1) * (lower ? 0.1 : 0.2), -1, lower ? 0.2 : 0.05).normalize();
 
 /* ---------------- One Euro filter (jitter vs. latency) ---------------- */
@@ -950,9 +956,10 @@ function solvePose(world, norm, t, alpha) {
     if (!handFresh) for (const [f, segs] of FINGER_DEFS) for (const g of segs) relax(s + f + g, alpha * 0.2);
 
     const kneeOk = opts.legs && vis(pidx(s, 'knee')) > 0.65 && vis(pidx(s, 'ankle')) > 0.6;
+    if (kneeOk) sit.legsSeen = t;
     const hp = P(s, 'hip'), kn = P(s, 'knee'), an = P(s, 'ankle');
-    aim(s + 'UpperLeg', kneeOk ? kn.clone().sub(hp) : new V3(0, -1, 0), kneeOk ? alpha : alpha * 0.25);
-    aim(s + 'LowerLeg', kneeOk ? an.clone().sub(kn) : new V3(0, -1, 0), kneeOk ? alpha : alpha * 0.25);
+    aim(s + 'UpperLeg', kneeOk ? kn.clone().sub(hp) : legRest(false), kneeOk ? alpha : alpha * 0.25);
+    aim(s + 'LowerLeg', kneeOk ? an.clone().sub(kn) : legRest(true), kneeOk ? alpha : alpha * 0.25);
   }
 }
 
@@ -1074,7 +1081,7 @@ function idle(dt, now) {
       aim(s + 'UpperArm', restArm(s, false), a); aim(s + 'LowerArm', restArm(s, true), a);
       relax(s + 'Hand', a);
       for (const [f, segs] of FINGER_DEFS) for (const g of segs) relax(s + f + g, a);
-      aim(s + 'UpperLeg', new V3(0, -1, 0), a); aim(s + 'LowerLeg', new V3(0, -1, 0), a);
+      aim(s + 'UpperLeg', legRest(false), a); aim(s + 'LowerLeg', legRest(true), a);
     }
     const breathe = Math.sin(now * 1.6) * 0.012;
     const c = avatar.bone('chest') || avatar.bone('spine');
@@ -1685,7 +1692,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1964,7 +1971,13 @@ function updateHands(dt, now) {
     else if (!h.holding && closed && !h.wasClosed) {
       // grab the nearest free prop within reach (only on the moment the hand closes)
       let best = null, bd = Infinity;
-      for (const p of props) { if (p.held) continue; const d = p.mesh.position.distanceTo(h.pos) - p.r; if (d < 0.09 && d < bd) { bd = d; best = p; } }
+      // free props near the hand, or the one the other hand holds (passing it from hand to hand)
+      for (const p of props) {
+        if (p.held === s) continue;
+        const d = (p.held ? p.mesh.getWorldPosition(_b) : p.mesh.position).distanceTo(h.pos) - p.r;
+        if (d < 0.09 && d < bd) { bd = d; best = p; }
+      }
+      if (best?.held) { hands[best.held].holding = null; best.held = null; }
       if (best) {
         best.held = s; h.holding = best; hb.attach(best.mesh); best.vel.set(0, 0, 0); best.spin.set(0, 0, 0);
         if (best.kind === 'mic' || best.kind === 'light' || best.kind === 'wand') holdUpright(best.mesh, s);
@@ -2401,8 +2414,32 @@ function stepBodyPos(dt, now) {
     target.x = THREE.MathUtils.clamp(target.x, -0.8, 0.8); target.y = THREE.MathUtils.clamp(target.y, -0.6, 0.25);
   }
   bodyPos.off.lerp(target, 1 - Math.exp(-dt * (fresh ? 8 : 2)));
+  // sitting: the thighs turn horizontal, so the hips come down by about one thigh length
+  sit.amount += ((isSitting() ? 1 : 0) - sit.amount) * (1 - Math.exp(-dt * 4));
+  const R = avatar.rest.pos, thigh = R.leftUpperLeg && R.leftLowerLeg ? R.leftUpperLeg.distanceTo(R.leftLowerLeg) : 0.4;
+  const sitDrop = sit.amount * thigh * 0.95;
   const flip = isVRM0() ? -1 : 1; // VRM 0.x bone frames are turned 180°
-  hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y, bodyPos.rest.z);
+  hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y - sitDrop, bodyPos.rest.z);
+  placeChair(hips, thigh);
+}
+function placeChair(hips, thigh) {
+  const show = $('#optChair').checked && sit.amount > 0.5;
+  if (!show) { if (sit.chair) sit.chair.visible = false; return; }
+  if (!sit.chair || sit.chairFor !== avatar) {
+    sit.chair?.removeFromParent(); sit.chair?.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); });
+    // a simple wooden chair sized to the model: seat at the hips, legs down to the floor, back behind
+    const g = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.7 }), cushion = new THREE.MeshStandardMaterial({ color: 0x3a4a6a, roughness: 0.9 });
+    const seatY = Math.max(0.2, (avatar.rest.pos.hips?.y ?? 0.9) - thigh * 0.95 - 0.06), w = 0.46, d = 0.44;
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), wood); seat.position.y = seatY;
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, 0.03, d * 0.9), cushion); pad.position.y = seatY + 0.04;
+    g.add(seat, pad);
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, seatY, 0.04), wood); leg.position.set(x * (w / 2 - 0.03), seatY / 2, z * (d / 2 - 0.03)); g.add(leg); }
+    const back = new THREE.Mesh(new THREE.BoxGeometry(w, 0.42, 0.04), wood); back.position.set(0, seatY + 0.26, -d / 2 + 0.02); g.add(back);
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    sit.chair = g; sit.chairFor = avatar; scene.add(g);
+  }
+  const hp = hips.getWorldPosition(_pf);
+  sit.chair.visible = true; sit.chair.position.set(hp.x, 0, hp.z - 0.12); // under the hips; the seat reaches back behind the back
 }
 const calibOrig = $('#calibBtn').onclick;
 function calibrateNow() { calibOrig(); bodyPos.ref = null; }
@@ -3055,7 +3092,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, sit, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
