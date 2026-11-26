@@ -18,6 +18,7 @@ import base64
 import hashlib
 import json
 import math
+import re
 import socket
 import struct
 import time
@@ -227,6 +228,16 @@ class Bridge:
             self.send([osc_message("/chatbox/input", text, True, bool(msg.get("sound", True)))], self.vrc)
         elif kind == "typing" and self.vrc:
             self.send([osc_message("/chatbox/typing", bool(msg.get("on")))], self.vrc)
+        elif kind == "param" and self.vrc:
+            # an avatar parameter (e.g. the avatar's expression number); only plain names are accepted
+            name, value = str(msg.get("name", "")), msg.get("value")
+            if re.fullmatch(r"[A-Za-z0-9_/\-]{1,64}", name) and isinstance(value, (int, float, bool)):
+                if not isinstance(value, bool):
+                    value = value if isinstance(value, int) else float(value)  # whole numbers go as int, others as float
+                self.send([osc_message("/avatar/parameters/" + name, value)], self.vrc)
+        elif kind == "jump" and self.vrc:
+            self.send([osc_message("/input/Jump", 1)], self.vrc)
+            asyncio.get_running_loop().call_later(0.15, lambda: self.send([osc_message("/input/Jump", 0)], self.vrc))
 
     async def client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:

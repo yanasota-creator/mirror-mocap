@@ -41,7 +41,7 @@ python -m http.server 8000
 | アクセサリー | ねこ耳・王冠・メガネ・天使の輪（頭の形を測って位置を合わせる） |
 | 保存 | 録画（MP4 / WebM、声も入れられる、3秒カウントダウン）、ポーズ固定（Space キー）、スクリーンショット（PNG、P キー、背景を透明にもできる）、設定のファイル保存・読込、モーション記録（VRMA・BVH）、モーション再生（VRMA・BVH。配布されているダンスなどのVRMAも再生可） |
 | 吹き出し | 入力した文字や、音声認識（オンにしたときだけ。音声は Google の音声認識に送られます）で文字にした言葉を、頭の横の吹き出しと VRChat のチャットボックスに出す |
-| 外部連携 | PCで `native/bridge/bridge.py` を動かすと、VSeeFace・Warudo など（VMC）と VRChat（OSC トラッカー、チャットボックス）に送れる。逆に mocopi・iPhone の顔トラッキングアプリなどの VMC を受け取って動かすこともできる。使い方は `native/README.md` |
+| 外部連携 | PCで `native/bridge/bridge.py` を動かすと、VSeeFace・Warudo など（VMC）と VRChat（OSC トラッカー、チャットボックス、表情パラメータ、両手を上げてジャンプ）に送れる。逆に mocopi・iPhone の顔トラッキングアプリなどの VMC を受け取って動かすこともできる。使い方は `native/README.md` |
 
 ## 使い方のコツ
 - 画面から60〜100cm離れて、ひじまで映ると腕が動きます

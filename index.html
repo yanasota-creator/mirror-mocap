@@ -152,6 +152,7 @@ body.stream .bar, body.stream .panel, body.stream .views, body.stream .toast { d
 body.stream .app { grid-template-rows: 1fr; }
 body.stream .main { grid-template-columns: 1fr; }
 .chat { display: flex; gap: 6px; }
+input.text { width: 100%; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .chat input { flex: 1; min-width: 0; background: #232734; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
 .status { font-size: 12px; color: var(--muted); margin: 0; }
 .status.ok { color: var(--ok); }
@@ -367,6 +368,10 @@ body.stream .stage { height: 100%; min-height: 0; }
         <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
         <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
         <p class="status" id="vmcInStatus" aria-live="polite"></p>
+        <label for="vrcParam">VRChat：表情ボタンで送るパラメータ名</label>
+        <input type="text" id="vrcParam" class="text" placeholder="例：Expression（空欄なら送らない）" maxlength="64" spellcheck="false" autocomplete="off">
+        <p class="hint">表情ボタンを押すと、そのパラメータに番号（喜=1・怒=2・哀=3・驚=4・穏=5、解除=0）を送ります。番号の意味はアバターの作り次第です。</p>
+        <label class="toggle"><span>VRChat：両手を上げるとジャンプ<small>両手を頭より上に上げると、VRChat でジャンプします</small></span><input type="checkbox" id="optJump"></label>
         <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
       </section>
 
@@ -1680,7 +1685,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1801,6 +1806,9 @@ const presetW = Object.fromEntries(PRESETS.map(k => [k, 0]));
 let activePreset = null;
 function setPreset(k) {
   activePreset = k === activePreset ? null : k;
+  // tell VRChat too, if a parameter name is set (number = position in the 喜怒哀驚穏 row, 0 = off)
+  const param = $('#vrcParam').value.trim();
+  if (param && typeof bridgeSend === 'function') bridgeSend({ type: 'param', name: param, value: activePreset ? PRESETS.indexOf(activePreset) + 1 : 0 });
   document.querySelectorAll('#exprBtns button, #customExpr button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.expr === activePreset)));
 }
 // expressions the model's author added (e.g. ">_<"), as extra buttons
@@ -2796,6 +2804,18 @@ function detectClap(now) {
   clap.was = touching;
 }
 
+
+/* ---- VRChat: raise both hands above the head to jump ---- */
+const jump = { last: 0, was: false };
+function detectJump(now) {
+  if (!$('#optJump').checked || now - seen.pose > 0.5) return;
+  const head = avatar?.bone('head'), l = avatar?.bone('leftHand'), r = avatar?.bone('rightHand'); if (!head || !l || !r) return;
+  const hy = head.getWorldPosition(_a).y + 0.12;
+  const up = l.getWorldPosition(_b).y > hy && r.getWorldPosition(_b).y > hy;
+  if (up && !jump.was && now - jump.last > 1) { jump.last = now; bridgeSend({ type: 'jump' }); }
+  jump.was = up;
+}
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -3009,6 +3029,7 @@ function bvhCapture(now) {
 function extrasAfterUpdate(dt, now) {
   lastColliderDt = Math.max(dt, 1e-3);
   detectClap(now);
+  detectJump(now);
   followCamera();
   stepWands(now);
   stepLift();
@@ -3034,7 +3055,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, lift, confetti, burstConfetti, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, lift, confetti, burstConfetti, bridgeSend, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
