@@ -5,6 +5,8 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
 const MP_VERSION = '0.10.21';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+// fingerprints of the AI's code files, kept with the libraries' in the import map (one list, checked by tools/build.py)
+const MP_SRI = JSON.parse(document.querySelector('script[type=importmap]').textContent).integrity ?? {};
 const MODEL_URLS = {
   poseLite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
   poseFull: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',

@@ -1,5 +1,20 @@
 /* ---------------- MediaPipe ---------------- */
-/* These two functions are self-contained on purpose: they are also stringified into the Web Workers. */
+/* These three functions are self-contained on purpose: they are also stringified into the Web Workers. */
+// The AI's code (the bundle and the WebAssembly) is fetched with its fingerprint (SRI, listed in the import map):
+// the browser refuses it if even one byte differs from the published version, and only then is it run.
+async function mpLoad(base, sri) {
+  const get = async (path, type) => {
+    const url = base + '/' + path, integrity = sri[url];
+    if (!integrity) throw new Error('no fingerprint for ' + url);
+    const r = await fetch(url, { integrity });
+    if (!r.ok) throw new Error(r.status + ' ' + url);
+    return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+  };
+  const vision = await import(await get('vision_bundle.mjs', 'text/javascript'));
+  const kind = (await vision.FilesetResolver.isSimdSupported()) ? 'wasm_internal' : 'wasm_nosimd_internal';
+  const [wasmLoaderPath, wasmBinaryPath] = await Promise.all([get(`wasm/vision_${kind}.js`, 'text/javascript'), get(`wasm/vision_${kind}.wasm`, 'application/wasm')]);
+  return { vision, fileset: { wasmLoaderPath, wasmBinaryPath } };
+}
 async function mpCreate(vision, fileset, part, url, delegate) {
   const base = { baseOptions: { modelAssetPath: url, delegate }, runningMode: 'VIDEO' };
   if (part === 'body') return vision.PoseLandmarker.createFromOptions(fileset, { ...base, numPoses: 1, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
@@ -16,6 +31,7 @@ function mpRun(lm, part, src, ts) {
 /* Engine A: one Web Worker per model, so body / face / hands run at the same time instead of queuing.
    Each worker also times GPU vs CPU on real frames and keeps the faster one (integrated GPUs often lose on small models). */
 const WORKER_SRC = `
+const mpLoad = ${mpLoad.toString()};
 const mpCreate = ${mpCreate.toString()};
 const mpRun = ${mpRun.toString()};
 let vision, fileset, part, url, lm = null, delegate = 'GPU';
@@ -47,8 +63,7 @@ self.onmessage = async (e) => {
   try {
     if (m.type === 'init') {
       part = m.part; url = m.url;
-      vision = await import(m.base + '/vision_bundle.mjs');
-      fileset = await vision.FilesetResolver.forVisionTasks(m.base + '/wasm');
+      ({ vision, fileset } = await mpLoad(m.base, m.sri));
       try { await use('GPU'); } catch (err) { await use('CPU'); decided = true; }
       postMessage({ type: 'ready', delegate });
     } else if (m.type === 'frame') {
@@ -97,7 +112,7 @@ function createWorkerPart(part) {
       else if (m.type === 'result') { const r = pending.get(m.id); pending.delete(m.id); r?.(m); }
     };
     w.onerror = (e) => { clearTimeout(timer); w.terminate(); reject(new Error(e.message || 'worker error')); };
-    w.postMessage({ type: 'init', base: MP_BASE, part, url: partUrl(part) });
+    w.postMessage({ type: 'init', base: MP_BASE, sri: MP_SRI, part, url: partUrl(part) });
   });
 }
 async function createWorkerEngine() {
@@ -115,8 +130,7 @@ async function createWorkerEngine() {
 
 /* Engine B: everything on the main thread (fallback when workers can't load the AI) */
 async function createMainEngine() {
-  const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
-  const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+  const { vision, fileset } = await mpLoad(MP_BASE, MP_SRI);
   const parts = {};
   for (const p of PARTS) {
     note(`AIモデルを読み込み中（${PART_LABEL[p]}）…`);

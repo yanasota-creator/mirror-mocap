@@ -159,7 +159,7 @@ tools/                     開発用（build.py, test_all.py, test_bridge.py, we
 - bridge.py は **Origin（接続元のページ）を許可リストで確認**します（公開Web版・localhost・127.0.0.1）。ほかのサイトからは 403 で拒否
 - **file:// のページ（Origin が `null`）は接続コードが必要**（4回目で変更）。`null` は、どのサイトでも sandbox 付きの iframe で作れるので、以前は他のサイトから VRChat のチャット書き込みや姿勢の盗み見ができた。コードは `native/bridge/bridge-code.txt`（git には入れない）。5回間違えると1分止める
 - bridge.py の守り：1メッセージ1MB まで（分割されたものも合計で）、マスクのないフレームは切断、同時接続8まで、壊れた JSON や型違いは捨てて接続は続ける、チャットの制御文字は除く、VMC受信は骨64・表情128個まで・NaN は捨てる・バンドルの入れ子は4段まで
-- Web版の守り：CSP（`src/index.html` の meta。インラインスクリプトのハッシュは build.py が自動で入れる）、インポートマップの `integrity`（ライブラリ6ファイルの SRI。バージョンを上げるときは `tools/webtest/node_modules` の同じファイルから sha384 を計算し直す。違うとページが起動せず「読み込めませんでした」の案内が出る）、ブリッジから届く数値は `cleanBones` `cleanBlend` で NaN や変な名前を捨てる
+- Web版の守り：CSP（`src/index.html` の meta。インラインスクリプトのハッシュは build.py が自動で入れる）、インポートマップの `integrity`（ライブラリ6ファイルと、MediaPipe の5ファイル＝本体と WebAssembly。MediaPipe は Worker の中で読むので import map は効かず、`mpLoad` が `fetch(url, { integrity })` で取ってから blob URL にして使う。そのため CSP の script-src に `blob:` がある。バージョンを上げるときは `tools/webtest/node_modules` の同じファイルから sha384 を計算し直す。違うとページが起動せず「読み込めませんでした」の案内が出る）、ブリッジから届く数値は `cleanBones` `cleanBlend` で NaN や変な名前を捨てる
 - **CSP に通信先を足すとき**：新しい外部のサーバーを使う機能を作ったら、meta の `connect-src` や `img-src` に足さないとブラウザに止められる（自動テストの「ページのエラーがない」で気づける）
 - 外へ出す骨の値（`exportPose`）は、正規化ボーン（T字ポーズで回転0の骨）のローカル回転です。**VRM 0.x は three-vrm の中で180°回されているので、送るときに (−x, y, −z, w) で戻します**。受け取るとき（VMC受信・ビューア・VRMA）も同じ考え方です
 - three.js → Unity の変換：位置 (−x, y, z)、回転 (x, −y, −z, w)

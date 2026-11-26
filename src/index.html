@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
      tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src @SCRIPT_HASHES@ https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src @SCRIPT_HASHES@ https://cdn.jsdelivr.net blob: 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -384,7 +384,12 @@
     "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js": "sha384-Lq1Wl94so5JCKGDvezrdVMJhdeKQkwb8iwRo59QrPPd61CnrCJZLxYmFlQ8ZuOKR",
     "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-wOjwauvHlJO7K6APr7FmMGH2nupQa3Ndzas9bJZhsAMOK055efJud8ns4aYmASKv",
     "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js": "sha384-GuN5QzQYBt5R8daMEdf+CT8kH1kC8e3azAfOLEcCeE/+AG8Ta8mM57zaQ0eO2wIG",
-    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js": "sha384-5gIQYATFFKeJpZ5KsJ286pCgj7J1j69BNYNpjx6BXAm7vtwoGUuptn1K0QAG0+gk"
+    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js": "sha384-5gIQYATFFKeJpZ5KsJ286pCgj7J1j69BNYNpjx6BXAm7vtwoGUuptn1K0QAG0+gk",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs": "sha384-ab4SY/+FR9msCvHcCTSMNxTZGzrlfQPZBytYVX2byeIYBx6TOui9vvsLeq9cZJW4",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_internal.js": "sha384-MMmkTwRjsrcocMM4i/voctUk/2bgv860D1e8/H8lZlWQwII8hBPhO8nZRfVDWErY",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_internal.wasm": "sha384-5CHiizcG3SmHE9yb31ynp58+HxhuoCVp7RUsTP9sjbx28ItTh3QvnzETYPbiCp5U",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_nosimd_internal.js": "sha384-g90rCTza6aOztJiHE5UTse0pbLcL9wWpcX94gyP0IEM2DfePVB1CJI55pN46T7m3",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_nosimd_internal.wasm": "sha384-1qQeFc/D4XWQsFU6rmN97e+8OfC4Axy5XXbwrsNciQEZ19mIKFn2Q5vqElEnE/BC"
   }
 }
 </script>

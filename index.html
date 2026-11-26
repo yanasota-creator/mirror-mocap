@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
      tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-queCg4bDskXthZDmWTlheovsE0pjfTvGjcdjIoT4ZDc=' 'sha256-oyU4c/4TKcSB4bPPxGGZyYNI9g4wk4HAOKDY1yWbRAM=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-tzh7ryX+RjukpTFidIaDUILEPFYE/jUL84Htwa7se/k=' 'sha256-SZPMMzTLplak4zKy8dfGp1sGm8k6iftfDCdimeTagPE=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net blob: 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -608,7 +608,12 @@ body.stream .stage { height: 100%; min-height: 0; }
     "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js": "sha384-Lq1Wl94so5JCKGDvezrdVMJhdeKQkwb8iwRo59QrPPd61CnrCJZLxYmFlQ8ZuOKR",
     "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-wOjwauvHlJO7K6APr7FmMGH2nupQa3Ndzas9bJZhsAMOK055efJud8ns4aYmASKv",
     "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.js": "sha384-GuN5QzQYBt5R8daMEdf+CT8kH1kC8e3azAfOLEcCeE/+AG8Ta8mM57zaQ0eO2wIG",
-    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js": "sha384-5gIQYATFFKeJpZ5KsJ286pCgj7J1j69BNYNpjx6BXAm7vtwoGUuptn1K0QAG0+gk"
+    "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.4.4/lib/three-vrm-animation.module.js": "sha384-5gIQYATFFKeJpZ5KsJ286pCgj7J1j69BNYNpjx6BXAm7vtwoGUuptn1K0QAG0+gk",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs": "sha384-ab4SY/+FR9msCvHcCTSMNxTZGzrlfQPZBytYVX2byeIYBx6TOui9vvsLeq9cZJW4",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_internal.js": "sha384-MMmkTwRjsrcocMM4i/voctUk/2bgv860D1e8/H8lZlWQwII8hBPhO8nZRfVDWErY",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_internal.wasm": "sha384-5CHiizcG3SmHE9yb31ynp58+HxhuoCVp7RUsTP9sjbx28ItTh3QvnzETYPbiCp5U",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_nosimd_internal.js": "sha384-g90rCTza6aOztJiHE5UTse0pbLcL9wWpcX94gyP0IEM2DfePVB1CJI55pN46T7m3",
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/vision_wasm_nosimd_internal.wasm": "sha384-1qQeFc/D4XWQsFU6rmN97e+8OfC4Axy5XXbwrsNciQEZ19mIKFn2Q5vqElEnE/BC"
   }
 }
 </script>
@@ -620,6 +625,8 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
 const MP_VERSION = '0.10.21';
 const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+// fingerprints of the AI's code files, kept with the libraries' in the import map (one list, checked by tools/build.py)
+const MP_SRI = JSON.parse(document.querySelector('script[type=importmap]').textContent).integrity ?? {};
 const MODEL_URLS = {
   poseLite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
   poseFull: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
@@ -1301,7 +1308,22 @@ $('#calibBtn').onclick = () => {
 };
 
 /* ---------------- MediaPipe ---------------- */
-/* These two functions are self-contained on purpose: they are also stringified into the Web Workers. */
+/* These three functions are self-contained on purpose: they are also stringified into the Web Workers. */
+// The AI's code (the bundle and the WebAssembly) is fetched with its fingerprint (SRI, listed in the import map):
+// the browser refuses it if even one byte differs from the published version, and only then is it run.
+async function mpLoad(base, sri) {
+  const get = async (path, type) => {
+    const url = base + '/' + path, integrity = sri[url];
+    if (!integrity) throw new Error('no fingerprint for ' + url);
+    const r = await fetch(url, { integrity });
+    if (!r.ok) throw new Error(r.status + ' ' + url);
+    return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+  };
+  const vision = await import(await get('vision_bundle.mjs', 'text/javascript'));
+  const kind = (await vision.FilesetResolver.isSimdSupported()) ? 'wasm_internal' : 'wasm_nosimd_internal';
+  const [wasmLoaderPath, wasmBinaryPath] = await Promise.all([get(`wasm/vision_${kind}.js`, 'text/javascript'), get(`wasm/vision_${kind}.wasm`, 'application/wasm')]);
+  return { vision, fileset: { wasmLoaderPath, wasmBinaryPath } };
+}
 async function mpCreate(vision, fileset, part, url, delegate) {
   const base = { baseOptions: { modelAssetPath: url, delegate }, runningMode: 'VIDEO' };
   if (part === 'body') return vision.PoseLandmarker.createFromOptions(fileset, { ...base, numPoses: 1, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
@@ -1318,6 +1340,7 @@ function mpRun(lm, part, src, ts) {
 /* Engine A: one Web Worker per model, so body / face / hands run at the same time instead of queuing.
    Each worker also times GPU vs CPU on real frames and keeps the faster one (integrated GPUs often lose on small models). */
 const WORKER_SRC = `
+const mpLoad = ${mpLoad.toString()};
 const mpCreate = ${mpCreate.toString()};
 const mpRun = ${mpRun.toString()};
 let vision, fileset, part, url, lm = null, delegate = 'GPU';
@@ -1349,8 +1372,7 @@ self.onmessage = async (e) => {
   try {
     if (m.type === 'init') {
       part = m.part; url = m.url;
-      vision = await import(m.base + '/vision_bundle.mjs');
-      fileset = await vision.FilesetResolver.forVisionTasks(m.base + '/wasm');
+      ({ vision, fileset } = await mpLoad(m.base, m.sri));
       try { await use('GPU'); } catch (err) { await use('CPU'); decided = true; }
       postMessage({ type: 'ready', delegate });
     } else if (m.type === 'frame') {
@@ -1399,7 +1421,7 @@ function createWorkerPart(part) {
       else if (m.type === 'result') { const r = pending.get(m.id); pending.delete(m.id); r?.(m); }
     };
     w.onerror = (e) => { clearTimeout(timer); w.terminate(); reject(new Error(e.message || 'worker error')); };
-    w.postMessage({ type: 'init', base: MP_BASE, part, url: partUrl(part) });
+    w.postMessage({ type: 'init', base: MP_BASE, sri: MP_SRI, part, url: partUrl(part) });
   });
 }
 async function createWorkerEngine() {
@@ -1417,8 +1439,7 @@ async function createWorkerEngine() {
 
 /* Engine B: everything on the main thread (fallback when workers can't load the AI) */
 async function createMainEngine() {
-  const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
-  const fileset = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+  const { vision, fileset } = await mpLoad(MP_BASE, MP_SRI);
   const parts = {};
   for (const p of PARTS) {
     note(`AIモデルを読み込み中（${PART_LABEL[p]}）…`);
