@@ -320,11 +320,21 @@ body.stream .stage { height: 100%; min-height: 0; }
           <input type="range" id="optJiggle" min="0" max="100" value="55">
           <p class="hint">上げると動きが行き過ぎて戻り、耳・しっぽ・髪がよく揺れます。</p>
         </div>
+        <div class="slider">
+          <div class="top"><label for="optMouthGain">口・笑顔の感度</label><output id="mouthGainOut">50</output></div>
+          <input type="range" id="optMouthGain" min="0" max="100" value="50">
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optBlinkGain">まばたきの感度</label><output id="blinkGainOut">50</output></div>
+          <input type="range" id="optBlinkGain" min="0" max="100" value="50">
+          <p class="hint">上げると小さな動きでも反応し、下げると大きく動かしたときだけ反応します。</p>
+        </div>
       </section>
 
       <section class="sec">
         <h2>調整</h2>
         <button type="button" class="btn" id="calibBtn">正面リセット<kbd>C</kbd></button>
+        <label class="toggle"><span>今の顔を「無表情」として記憶する<small>何もしていないのに笑顔や口開きに見えるときに効きます（記憶はページを閉じるまで）</small></span><input type="checkbox" id="optNeutral" checked></label>
         <label class="toggle"><span>3秒数えてから記憶する<small>押したあと、まっすぐ座り直す時間を取ります</small></span><input type="checkbox" id="optCalibDelay" checked></label>
         <p class="hint">カメラに向かってまっすぐ座った状態で押すと、その姿勢を「正面」として記憶します。首や体が傾いて見えるときに使います。</p>
         <button type="button" class="btn" id="freezeBtn" aria-pressed="false">ポーズを固定<kbd>Space</kbd></button>
@@ -1001,6 +1011,7 @@ function solveHand(s, world, t, alpha) {
 /* Hands in front of the face: the face AI then returns shifted points and the mouth reads as "open".
    Find hand points (hand AI, or the body AI's wrist/finger points) over the face, near the mouth, near the eyes. */
 let faceHeld = -1e9, jumpRejects = 0;
+let faceNeutral = {}, lastBlend = null; // blendshape scores of your relaxed face (set at 正面リセット)
 function handPointsNorm() {
   const pts = [];
   for (const hl of latest.hands?.landmarks ?? []) for (const i of [0, 2, 4, 5, 8, 9, 12, 13, 16, 17, 20]) pts.push(hl[i]);
@@ -1057,7 +1068,9 @@ function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: fal
 
   const b = {};
   for (const c of blend) b[c.categoryName] = c.score;
-  const g = (n) => b[n] ?? 0;
+  lastBlend = b;
+  // relative to the face remembered as "neutral" at 正面リセット (some faces read as slightly smiling or open at rest)
+  const g = (n) => { const v = b[n] ?? 0, z = faceNeutral[n] ?? 0; return z > 0.02 ? THREE.MathUtils.clamp((v - z) / (1 - z), 0, 1) : v; };
   const ramp = (v, lo, hi) => THREE.MathUtils.clamp((v - lo) / (hi - lo), 0, 1);
   const subj = (side, base) => g(base + (subjSide(side) === 'left' ? 'Left' : 'Right'));
   const target = {
@@ -1072,6 +1085,10 @@ function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: fal
   const spread = ramp((g('mouthStretchLeft') + g('mouthStretchRight')) / 2 + (g('mouthSmileLeft') + g('mouthSmileRight')) * 0.15, 0.12, 0.45);
   target.ih = spread * (1 - target.aa) * 0.7;
   target.ee = spread * Math.min(1, target.aa * 2) * 0.6;
+  // sensitivity sliders (50 = as is; each 25 steps doubles or halves)
+  const gain = (id) => Math.pow(2, (+$(id).value - 50) / 25), mg = gain('#optMouthGain'), bg = gain('#optBlinkGain');
+  for (const k of ['aa', 'ou', 'oh', 'ih', 'ee', 'happy']) target[k] = Math.min(1, target[k] * mg);
+  target.blinkLeft = Math.min(1, target.blinkLeft * bg); target.blinkRight = Math.min(1, target.blinkRight * bg);
   // link blinks slightly so a single noisy eye doesn't wink
   const avg = (target.blinkLeft + target.blinkRight) / 2;
   target.blinkLeft = target.blinkLeft * 0.6 + avg * 0.4;
@@ -1718,7 +1735,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1737,6 +1754,7 @@ function loadSettings() {
   applyPreview();
   if ($('#optBg').value === 'image') $('#optBg').value = 'studio'; // the image itself is not stored
   $('#micGainOut').textContent = $('#optMicGain').value;
+  $('#mouthGainOut').textContent = $('#optMouthGain').value; $('#blinkGainOut').textContent = $('#optBlinkGain').value;
   applyBackground();
   applyLight();
   setTimeout(applyWeather, 0);
@@ -1886,6 +1904,8 @@ async function setMic(on) {
 }
 $('#optMic').onchange = () => setMic($('#optMic').checked);
 $('#optMicGain').oninput = () => { $('#micGainOut').textContent = $('#optMicGain').value; };
+$('#optMouthGain').oninput = () => { $('#mouthGainOut').textContent = $('#optMouthGain').value; };
+$('#optBlinkGain').oninput = () => { $('#blinkGainOut').textContent = $('#optBlinkGain').value; };
 function micMouth(dt) {
   if (!mic.an) return null;
   mic.an.getFloatTimeDomainData(mic.buf);
@@ -2479,7 +2499,10 @@ function placeChair(hips, thigh) {
   sit.chair.visible = true; sit.chair.position.set(hp.x, 0, hp.z - 0.12); // under the hips; the seat reaches back behind the back
 }
 const calibOrig = $('#calibBtn').onclick;
-function calibrateNow() { calibOrig(); bodyPos.ref = null; }
+function calibrateNow() {
+  calibOrig(); bodyPos.ref = null;
+  if ($('#optNeutral').checked && lastBlend) faceNeutral = { ...lastBlend }; // this face = "no expression"
+}
 $('#calibBtn').onclick = () => { if ($('#optCalibDelay').checked) countdown(3, calibrateNow); else calibrateNow(); };
 $('#exportSettings').onclick = () => {
   saveSettings();
