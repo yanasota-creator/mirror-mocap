@@ -356,6 +356,8 @@ body.stream .stage { height: 100%; min-height: 0; }
         <h2>外部連携</h2>
         <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
         <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
+        <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
+        <p class="status" id="vmcInStatus" aria-live="polite"></p>
         <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
       </section>
 
@@ -1654,7 +1656,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1845,7 +1847,7 @@ function extrasBeforeUpdate(dt, now) {
   extraExpr = e;
   avatar.expr(e);
   applyPlayback(dt);
-  if (!frozen) stepBodyPos(dt, now);
+  if (!frozen) { stepBodyPos(dt, now); applyVmcIn(now); }
 }
 
 /* ---- grabbable props ---- */
@@ -2547,6 +2549,65 @@ function stepWeather(dt, now) {
 }
 $('#optWeather').onchange = applyWeather;
 
+
+/* ---- motion FROM a VMC sender (via bridge.py): Unity humanoid bone names, left-handed local rotations ---- */
+const vmcIn = { frame: null, t: -1e9, hipsScale: null, statusT: 0 };
+const VMC_TO_VRM = { A: 'aa', I: 'ih', U: 'ou', E: 'ee', O: 'oh', Blink: 'blink', Blink_L: 'blinkLeft', Blink_R: 'blinkRight',
+  Joy: 'happy', Angry: 'angry', Sorrow: 'sad', Fun: 'relaxed', Surprised: 'surprised', Neutral: 'neutral' };
+function vrmBoneName(unity) {
+  let n = unity[0].toLowerCase() + unity.slice(1);
+  for (const s of SIDES) n = n.replace(s + 'ThumbProximal', s + 'ThumbMetacarpal').replace(s + 'ThumbIntermediate', s + 'ThumbProximal');
+  return n;
+}
+const ramp01 = (v, lo, hi) => THREE.MathUtils.clamp((v - lo) / (hi - lo), 0, 1);
+function vmcExpressions(blend) {
+  const e = {}, g = (k) => blend[k] ?? 0;
+  for (const k in blend) {
+    if (VMC_TO_VRM[k]) e[VMC_TO_VRM[k]] = blend[k];
+    else if (/^(aa|ih|ou|ee|oh|happy|angry|sad|relaxed|surprised|blink|blinkLeft|blinkRight)$/.test(k)) e[k] = blend[k];
+  }
+  // ARKit ("perfect sync") names from iPhone face apps
+  if ('jawOpen' in blend || 'eyeBlinkLeft' in blend) {
+    e.blinkLeft = Math.max(e.blinkLeft ?? 0, g('eyeBlinkLeft')); e.blinkRight = Math.max(e.blinkRight ?? 0, g('eyeBlinkRight'));
+    e.aa = Math.max(e.aa ?? 0, ramp01(g('jawOpen'), 0.06, 0.55)); e.ou = Math.max(e.ou ?? 0, ramp01(g('mouthPucker'), 0.25, 0.85) * 0.8);
+    e.oh = Math.max(e.oh ?? 0, ramp01(g('mouthFunnel'), 0.15, 0.6) * 0.7);
+    e.happy = Math.max(e.happy ?? 0, ramp01((g('mouthSmileLeft') + g('mouthSmileRight')) / 2, 0.25, 0.75));
+  }
+  if (e.blink != null) { e.blinkLeft = Math.max(e.blinkLeft ?? 0, e.blink); e.blinkRight = Math.max(e.blinkRight ?? 0, e.blink); delete e.blink; }
+  delete e.neutral;
+  return e;
+}
+function applyVmcIn(now) {
+  const f = vmcIn.frame, on = $('#optVmcIn').checked, fresh = f && now - vmcIn.t < 0.5;
+  if (now - vmcIn.statusT > 0.5) {
+    vmcIn.statusT = now;
+    const el = $('#vmcInStatus');
+    if (!on) el.textContent = '';
+    else if (!bridge.ws) { el.textContent = '「PCブリッジに送信」をオンにしてください'; el.className = 'status bad'; }
+    else if (!fresh) { el.textContent = 'VMCを待っています（送信アプリの送り先を このPC：39542 にしてください）'; el.className = 'status'; }
+    else { el.textContent = `受信中：骨 ${Object.keys(f.bones).filter(k => k !== '__root').length} 本・表情 ${Object.keys(f.blend).length} 個`; el.className = 'status ok'; }
+  }
+  if (!on || !fresh || play.clip) return;
+  if (vmcIn.avatar !== avatar) { vmcIn.avatar = avatar; vmcIn.hipsScale = null; } // new model: measure the height ratio again
+  const flip = isVRM0();
+  for (const name in f.bones) {
+    if (name === '__root') continue;
+    const b = avatar.bone(vrmBoneName(name)); if (!b) continue;
+    const [px, py, pz, qx, qy, qz, qw] = f.bones[name];
+    // Unity (left-handed) -> three.js: (x, -y, -z, w); VRM 0.x bone frames are turned 180° on top of that
+    if (flip) b.quaternion.set(-qx, -qy, qz, qw); else b.quaternion.set(qx, -qy, -qz, qw);
+    if (name === 'Hips' && py > 0.05) {
+      const restY = bodyPos.rest?.y ?? b.position.y;
+      vmcIn.hipsScale ??= restY / py; // the sender's avatar may be taller or shorter
+      const k = vmcIn.hipsScale;
+      if (flip) b.position.set(px * k, py * k, -pz * k); else b.position.set(-px * k, py * k, pz * k);
+    }
+  }
+  const e = vmcExpressions(f.blend);
+  if (Object.keys(e).length) { extraExpr = { ...extraExpr, ...e }; avatar.expr(extraExpr); }
+}
+$('#optVmcIn').onchange = () => { vmcIn.hipsScale = null; if ($('#optVmcIn').checked && !$('#optBridge').checked) { $('#optBridge').checked = true; $('#optBridge').onchange(); } };
+
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
    three-vrm turns VRM 0.x models around by 180°, so their values are turned back here. */
@@ -2593,7 +2654,8 @@ function connectBridge() {
   ws.onmessage = (e) => {
     try {
       const m = JSON.parse(e.data);
-      if (m.type === 'hello') bridgeStatus(`接続中：VMC → ${m.vmc ?? 'オフ'} ／ VRChat → ${m.vrchat ?? 'オフ'}`, 'ok');
+      if (m.type === 'hello') bridgeStatus(`接続中：VMC → ${m.vmc ?? 'オフ'} ／ VRChat → ${m.vrchat ?? 'オフ'}${m.vmcIn ? ` ／ VMC受信 ポート${m.vmcIn}` : ''}`, 'ok');
+      else if (m.type === 'vmc') { vmcIn.frame = m; vmcIn.t = performance.now() / 1000; }
     } catch {}
   };
   ws.onclose = () => {
@@ -2779,7 +2841,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, bodyPos, ownList, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, bodyPos, ownList, vmcIn, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>

@@ -7,6 +7,7 @@ which forwards it as OSC packets. Standard library only (no pip install needed).
     python bridge.py                      # VMC -> 127.0.0.1:39539, VRChat -> 127.0.0.1:9000
     python bridge.py --no-vrchat          # VMC only
     python bridge.py --vmc 192.168.1.20:39539   # VMC receiver on another PC
+    python bridge.py --vmc-in 39542             # also take motion FROM a VMC sender (mocopi, iPhone face apps ...)
 
 Only pages from the allowed origins may connect (the public web version and pages on this PC),
 so other websites cannot drive your avatar or write to your VRChat chatbox.
@@ -125,6 +126,62 @@ def vrchat_packets(frame: dict):
     return out
 
 
+# --------------------------------------------------------------------------- OSC decoding (VMC input)
+
+def _read_str(b: bytes, i: int):
+    j = b.index(b"\0", i)
+    return b[i:j].decode("utf-8", "replace"), (j + 4) & ~3
+
+
+def osc_parse(b: bytes):
+    """OSC packet (message or bundle) -> list of (address, args)."""
+    if b.startswith(b"#bundle\0"):
+        out, i = [], 16
+        while i + 4 <= len(b):
+            n = struct.unpack(">i", b[i:i + 4])[0]
+            out += osc_parse(b[i + 4:i + 4 + n]); i += 4 + n
+        return out
+    addr, i = _read_str(b, 0)
+    if i >= len(b) or b[i:i + 1] != b",":
+        return [(addr, [])]
+    tags, i = _read_str(b, i)
+    args = []
+    for t in tags[1:]:
+        if t == "f": args.append(struct.unpack(">f", b[i:i + 4])[0]); i += 4
+        elif t == "i": args.append(struct.unpack(">i", b[i:i + 4])[0]); i += 4
+        elif t == "s": v, i = _read_str(b, i); args.append(v)
+        elif t == "T": args.append(True)
+        elif t == "F": args.append(False)
+        elif t == "d": args.append(struct.unpack(">d", b[i:i + 8])[0]); i += 8
+        else: break  # unknown type: stop reading this message
+    return [(addr, args)]
+
+
+class VMCIn(asyncio.DatagramProtocol):
+    """Collects bones and blendshapes from a VMC sender and hands them to the web page ~30 times a second."""
+
+    def __init__(self, bridge):
+        self.bridge, self.bones, self.blend, self.last = bridge, {}, {}, 0.0
+
+    def datagram_received(self, data, addr):
+        try:
+            msgs = osc_parse(data)
+        except (ValueError, struct.error, IndexError):
+            return
+        for a, args in msgs:
+            if a == "/VMC/Ext/Bone/Pos" and len(args) >= 8 and isinstance(args[0], str):
+                self.bones[args[0]] = [round(float(v), 5) for v in args[1:8]]
+            elif a == "/VMC/Ext/Root/Pos" and len(args) >= 8:
+                self.bones["__root"] = [round(float(v), 5) for v in args[1:8]]
+            elif a == "/VMC/Ext/Blend/Val" and len(args) >= 2 and isinstance(args[0], str):
+                self.blend[args[0]] = round(float(args[1]), 4)
+        now = time.monotonic()
+        if now - self.last >= 1 / 30 and (self.bones or self.blend):
+            self.last = now
+            self.bridge.broadcast({"type": "vmc", "bones": self.bones, "blend": self.blend})
+            self.bridge.vmc_in_frames += 1
+
+
 # --------------------------------------------------------------------------- minimal WebSocket server
 
 class Bridge:
@@ -135,6 +192,16 @@ class Bridge:
         self.vrc = _addr(args.vrchat) if not args.no_vrchat else None
         self.frames = 0
         self.clients = 0
+        self.writers = set()
+        self.vmc_in_frames = 0
+
+    def broadcast(self, obj):
+        text = json.dumps(obj, separators=(",", ":"))
+        for w in list(self.writers):
+            try:
+                self._write_text(w, text)
+            except (ConnectionError, RuntimeError):
+                self.writers.discard(w)
 
     def send(self, packets, addr):
         for p in packets:
@@ -177,8 +244,9 @@ class Bridge:
         writer.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                       f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode())
         self.clients += 1
+        self.writers.add(writer)
         print(f"Web版がつながりました（{origin}）", flush=True)
-        await self._send_text(writer, json.dumps({"type": "hello", "vmc": _fmt(self.vmc), "vrchat": _fmt(self.vrc)}))
+        await self._send_text(writer, json.dumps({"type": "hello", "vmc": _fmt(self.vmc), "vrchat": _fmt(self.vrc), "vmcIn": self.args.vmc_in or None}))
         buf = b""
         try:
             while True:
@@ -204,21 +272,34 @@ class Bridge:
             pass
         finally:
             self.clients -= 1
+            self.writers.discard(writer)
             print("Web版との接続が切れました", flush=True)
             writer.close()
 
     @staticmethod
-    async def _send_text(writer, text: str):
+    def _write_text(writer, text: str):
         data = text.encode()
-        hdr = bytes([0x81, len(data)]) if len(data) < 126 else bytes([0x81, 126]) + struct.pack(">H", len(data))
-        writer.write(hdr + data); await writer.drain()
+        if len(data) < 126:
+            hdr = bytes([0x81, len(data)])
+        elif len(data) < 65536:
+            hdr = bytes([0x81, 126]) + struct.pack(">H", len(data))
+        else:
+            hdr = bytes([0x81, 127]) + struct.pack(">Q", len(data))
+        writer.write(hdr + data)
+
+    async def _send_text(self, writer, text: str):
+        self._write_text(writer, text); await writer.drain()
 
     async def stats(self):
         while True:
             await asyncio.sleep(3)
             if self.clients:
-                print(f"受信 {self.frames / 3:.0f} 回/秒", flush=True)
+                msg = f"Web版から {self.frames / 3:.0f} 回/秒"
+                if self.vmc_in_frames:
+                    msg += f" ／ VMC受信 → Web版へ {self.vmc_in_frames / 3:.0f} 回/秒"
+                print(msg, flush=True)
             self.frames = 0
+            self.vmc_in_frames = 0
 
 
 def _addr(s: str):
@@ -235,6 +316,13 @@ async def main_async(args):
     server = await asyncio.start_server(br.client, "127.0.0.1", args.ws_port)
     print(f"ブリッジ起動: Web版からの接続を ws://127.0.0.1:{args.ws_port} で待っています（Ctrl+C で終了）", flush=True)
     print(f"  VMC 送信先: {_fmt(br.vmc) or 'オフ'} / VRChat 送信先: {_fmt(br.vrc) or 'オフ'}", flush=True)
+    if args.vmc_in:
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.create_datagram_endpoint(lambda: VMCIn(br), local_addr=("0.0.0.0" if args.vmc_in_lan else "127.0.0.1", args.vmc_in))
+            print(f"  VMC 受信: ポート {args.vmc_in}（{'LANからも' if args.vmc_in_lan else 'このPCの中だけ'}）", flush=True)
+        except OSError as e:
+            print(f"  VMC 受信ポート {args.vmc_in} を開けませんでした（ほかのアプリが使用中？）: {e}", flush=True)
     async with server:
         await asyncio.gather(server.serve_forever(), br.stats())
 
@@ -246,6 +334,8 @@ def main():
     ap.add_argument("--vrchat", default="127.0.0.1:9000", help="VRChat OSC host:port")
     ap.add_argument("--no-vmc", action="store_true")
     ap.add_argument("--no-vrchat", action="store_true")
+    ap.add_argument("--vmc-in", type=int, default=39542, help="UDP port to receive VMC motion on (0 = off)")
+    ap.add_argument("--vmc-in-lan", action="store_true", help="accept VMC from other devices on the LAN (phones etc.)")
     ap.add_argument("--allow-origin", action="append", default=list(DEFAULT_ORIGINS),
                     help="extra page origin allowed to connect (e.g. https://example.com)")
     args = ap.parse_args()
