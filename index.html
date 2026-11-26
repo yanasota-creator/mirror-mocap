@@ -162,6 +162,8 @@ body.stream .main { grid-template-columns: 1fr; }
 .sec.closed h2::after { transform: rotate(-45deg); }
 .sec.closed > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
+.frozen { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(18,20,27,.8); border: 1px solid var(--warn); color: var(--warn); border-radius: 999px; padding: 2px 12px; font-size: 12px; z-index: 4; }
+body.stream .frozen { display: none; }
 .countdown { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 400 120px var(--font-display); color: #fff; text-shadow: 0 4px 24px rgba(0,0,0,.6); z-index: 4; }
 details.keys summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 details.keys table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 6px; }
@@ -243,6 +245,7 @@ body.stream .stage { height: 100%; min-height: 0; }
       </div>
 
       <div class="countdown" id="countdown" hidden aria-live="assertive"></div>
+      <div class="frozen" id="frozenBadge" hidden>ポーズ固定中（Space で解除）</div>
       <button type="button" class="btn stream-exit" id="streamExit" hidden>配信モードを終わる（Esc）</button>
       <div class="toast" id="toast" role="alert" hidden><b id="toastTitle"></b><span id="toastBody"></span><button type="button" id="toastClose">閉じる</button></div>
     </main>
@@ -310,12 +313,14 @@ body.stream .stage { height: 100%; min-height: 0; }
         <button type="button" class="btn" id="calibBtn">正面リセット<kbd>C</kbd></button>
         <label class="toggle"><span>3秒数えてから記憶する<small>押したあと、まっすぐ座り直す時間を取ります</small></span><input type="checkbox" id="optCalibDelay" checked></label>
         <p class="hint">カメラに向かってまっすぐ座った状態で押すと、その姿勢を「正面」として記憶します。首や体が傾いて見えるときに使います。</p>
+        <button type="button" class="btn" id="freezeBtn" aria-pressed="false">ポーズを固定<kbd>Space</kbd></button>
         <details class="keys"><summary>キーボード操作</summary>
           <table>
             <tr><td><kbd>1</kbd>〜<kbd>5</kbd></td><td>表情（喜・怒・哀・驚・穏）／ <kbd>0</kbd> で解除</td></tr>
             <tr><td><kbd>C</kbd></td><td>正面リセット</td></tr>
             <tr><td><kbd>F</kbd></td><td>配信モードの切り替え（<kbd>Esc</kbd> でも戻る）</td></tr>
             <tr><td><kbd>P</kbd></td><td>スクリーンショット</td></tr>
+            <tr><td><kbd>Space</kbd></td><td>ポーズを固定／解除（スクショ用）</td></tr>
             <tr><td>右ドラッグ</td><td>カメラを平行移動（アバターを画面の端に寄せる）</td></tr>
             <tr><td>ホイール</td><td>ズーム</td></tr>
           </table>
@@ -325,8 +330,15 @@ body.stream .stage { height: 100%; min-height: 0; }
 
       <section class="sec">
         <h2>録画</h2>
-        <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
-        <p class="hint">停止すると .webm ファイルとして保存されます。「マイクで口パク」がオンなら声も入ります。</p>
+        <div class="grid2">
+          <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
+          <select id="recFormat" aria-label="録画の保存形式">
+            <option value="mp4" selected>MP4（スマホ・SNS向け）</option>
+            <option value="webm">WebM</option>
+          </select>
+        </div>
+        <label class="toggle"><span>3秒数えてから録画<small>押したあと、ポーズを取る時間を取ります（もう一度押すと取り消し）</small></span><input type="checkbox" id="optRecDelay"></label>
+        <p class="hint">停止するとファイルとして保存されます（MP4 で録れないブラウザでは WebM）。「マイクで口パク」がオンなら声も入ります。</p>
         <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
         <div class="grid2">
           <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
@@ -379,6 +391,15 @@ body.stream .stage { height: 100%; min-height: 0; }
           <option value="neon">ネオン</option>
           <option value="night">夜</option>
         </select>
+        <label for="optWeather">天気</label>
+        <select id="optWeather" aria-label="天気">
+          <option value="none" selected>なし</option>
+          <option value="sakura">桜</option>
+          <option value="snow">雪</option>
+          <option value="sparkle">キラキラ</option>
+          <option value="hearts">ハート</option>
+        </select>
+        <label class="toggle"><span>カメラが体についていく<small>「体の位置も動かす」で動いたとき、カメラも一緒に動きます</small></span><input type="checkbox" id="optFollow" checked></label>
         <label class="toggle"><span>カメラをゆっくり動かす<small>配信画面に少し動きを付けます</small></span><input type="checkbox" id="optSway"></label>
         <button type="button" class="btn" id="streamBtn">配信モード（アバターだけを全画面に）<kbd>F</kbd></button>
         <button type="button" class="btn" id="pipBtn">デスクトップに浮かべる（小窓）</button>
@@ -992,12 +1013,16 @@ function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: fal
     oh: ramp(g('mouthFunnel'), 0.15, 0.6) * 0.7,
     happy: ramp((g('mouthSmileLeft') + g('mouthSmileRight')) / 2, 0.25, 0.75),
   };
+  // い / え: lips spread sideways; い with the jaw nearly closed, え with it half open
+  const spread = ramp((g('mouthStretchLeft') + g('mouthStretchRight')) / 2 + (g('mouthSmileLeft') + g('mouthSmileRight')) * 0.15, 0.12, 0.45);
+  target.ih = spread * (1 - target.aa) * 0.7;
+  target.ee = spread * Math.min(1, target.aa * 2) * 0.6;
   // link blinks slightly so a single noisy eye doesn't wink
   const avg = (target.blinkLeft + target.blinkRight) / 2;
   target.blinkLeft = target.blinkLeft * 0.6 + avg * 0.4;
   target.blinkRight = target.blinkRight * 0.6 + avg * 0.4;
   // hand near the mouth: keep the mouth as it was (otherwise a hand touching the chin "talks")
-  if (occ.mouth || occ.face) for (const k of ['aa', 'ou', 'oh', 'happy']) delete target[k];
+  if (occ.mouth || occ.face) for (const k of ['aa', 'ou', 'oh', 'ih', 'ee', 'happy']) delete target[k];
   if (occ.eyes) { delete target.blinkLeft; delete target.blinkRight; }
   for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
   avatar.expr(exprState);
@@ -1527,9 +1552,11 @@ function tick() {
   const now = performance.now() / 1000;
   frameCount++;
   if (avatar) {
-    pump();
-    withTargets(() => idle(dt, now));
-    easeToTargets(dt);
+    if (!frozen) {
+      pump();
+      withTargets(() => idle(dt, now));
+      easeToTargets(dt);
+    }
     extrasBeforeUpdate(dt, now);
     avatar.update(dt);
     extrasAfterUpdate(dt, now);
@@ -1566,10 +1593,17 @@ function tick() {
 let recorder = null, recChunks = [], recStart = 0, recTimer = null;
 $('#recBtn').onclick = () => {
   if (recorder) { recorder.stop(); return; }
+  if (countTimer) { stopCountdown(); return; } // pressed again during the countdown: cancel
+  if ($('#optRecDelay').checked) countdown(3, startRecording); else startRecording();
+};
+function startRecording() {
   if (!canvas.captureStream || typeof MediaRecorder === 'undefined') { toast('このブラウザは録画に対応していません', 'Chrome か Edge の最新版で試してください。'); return; }
   const st = canvas.captureStream(30), audio = mic.stream?.getAudioTracks()[0];
   if (audio) st.addTrack(audio); // "マイクで口パク" is on: record the voice too
-  const types = audio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  // MP4 plays everywhere (phones, social media); newer Chrome / Edge can record it directly
+  const mp4 = audio ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/mp4'] : ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
+  const webm = audio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const types = $('#recFormat').value === 'mp4' ? [...mp4, ...webm] : [...webm, ...mp4];
   const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
   recorder = new MediaRecorder(st, mimeType ? { mimeType, videoBitsPerSecond: 8e6 } : undefined);
   recChunks = [];
@@ -1593,7 +1627,7 @@ $('#recBtn').onclick = () => {
     const s = Math.floor((performance.now() - recStart) / 1000);
     $('#recLabel').textContent = `停止して保存 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }, 250);
-};
+}
 
 /* ---------------- Quality modes ---------------- */
 function applyRenderQuality() {
@@ -1620,7 +1654,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1641,6 +1675,7 @@ function loadSettings() {
   $('#micGainOut').textContent = $('#optMicGain').value;
   applyBackground();
   applyLight();
+  setTimeout(applyWeather, 0);
   if ($('#optBridge').checked) setTimeout(connectBridge, 0);
   return saved.model ?? null;
 }
@@ -1713,6 +1748,15 @@ $('#shotBtn').onclick = () => {
   download(canvas.toDataURL('image/png'), `mocap-${stamp()}.png`);
 };
 
+/* ---- big 3-2-1 on the stage, then run fn ---- */
+let countTimer = null;
+function stopCountdown() { clearInterval(countTimer); countTimer = null; $('#countdown').hidden = true; }
+function countdown(n, fn) {
+  stopCountdown();
+  const el = $('#countdown'); el.hidden = false; el.textContent = n;
+  countTimer = setInterval(() => { if (--n > 0) { el.textContent = n; return; } stopCountdown(); fn(); }, 1000);
+}
+
 /* ---- expression presets (buttons / keys 1-5) ---- */
 const PRESETS = ['happy', 'angry', 'sad', 'surprised', 'relaxed'];
 const presetW = Object.fromEntries(PRESETS.map(k => [k, 0]));
@@ -1742,6 +1786,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') setStreamMode(!document.body.classList.contains('stream'));
   else if (e.key === 'p' || e.key === 'P') $('#shotBtn').click();
   else if (e.key === 'c' || e.key === 'C') $('#calibBtn').click();
+  else if (e.key === ' ') { e.preventDefault(); setFrozen(!frozen); }
 });
 
 /* ---- microphone lip sync (local only: the sound is analysed and discarded) ---- */
@@ -1800,7 +1845,7 @@ function extrasBeforeUpdate(dt, now) {
   extraExpr = e;
   avatar.expr(e);
   applyPlayback(dt);
-  stepBodyPos(dt, now);
+  if (!frozen) stepBodyPos(dt, now);
 }
 
 /* ---- grabbable props ---- */
@@ -2301,18 +2346,8 @@ function stepBodyPos(dt, now) {
   hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y, bodyPos.rest.z);
 }
 const calibOrig = $('#calibBtn').onclick;
-let countTimer = null;
 function calibrateNow() { calibOrig(); bodyPos.ref = null; }
-$('#calibBtn').onclick = () => {
-  if (!$('#optCalibDelay').checked) { calibrateNow(); return; }
-  clearInterval(countTimer);
-  let n = 3; const el = $('#countdown'); el.hidden = false; el.textContent = n;
-  countTimer = setInterval(() => {
-    n--;
-    if (n > 0) { el.textContent = n; return; }
-    clearInterval(countTimer); el.hidden = true; calibrateNow();
-  }, 1000);
-};
+$('#calibBtn').onclick = () => { if ($('#optCalibDelay').checked) countdown(3, calibrateNow); else calibrateNow(); };
 $('#resetSettings').onclick = () => {
   if (!confirm('設定を初期状態に戻して、ページを開き直しますか？\n（このブラウザに保存した自分のVRMは消えません）')) return;
   try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem(CLOSED_KEY); } catch {}
@@ -2441,6 +2476,76 @@ const endDrag = (e) => {
   drag.p = null; controls.enabled = true;
 };
 canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+
+
+/* ---- freeze the pose (tracking pauses; expressions, props and effects keep going) ---- */
+let frozen = false;
+function setFrozen(on) {
+  frozen = on; $('#freezeBtn').setAttribute('aria-pressed', String(on)); $('#frozenBadge').hidden = !on;
+  $('#freezeBtn').firstChild.textContent = on ? 'ポーズの固定を解除' : 'ポーズを固定';
+}
+$('#freezeBtn').onclick = () => setFrozen(!frozen);
+
+/* ---- the camera follows the avatar when "体の位置も動かす" moves it ---- */
+const follow = { prev: null };
+function followCamera() {
+  const hips = avatar?.bone('hips'); if (!hips) { follow.prev = null; return; }
+  const p = hips.getWorldPosition(new V3());
+  if (follow.prev && follow.avatar === avatar && $('#optFollow').checked && !viewTween) {
+    const d = p.clone().sub(follow.prev);
+    if (d.lengthSq() < 0.01) { camera.position.add(d); controls.target.add(d); } // ignore jumps (model change, playback start)
+  }
+  follow.prev = p; follow.avatar = avatar;
+}
+
+/* ---- weather: falling sakura / snow / sparkles / hearts ---- */
+function weatherTexture(kind) {
+  if (kind === 'hearts') return fxTex.heart ??= fxTexture('heart');
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  if (kind === 'sakura') {
+    g.translate(32, 32); g.rotate(0.5); g.fillStyle = '#ffc4d8';
+    g.beginPath(); g.ellipse(0, 0, 13, 24, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ff9fc0'; g.beginPath(); g.ellipse(0, -14, 5, 8, 0, 0, Math.PI * 2); g.fill();
+  } else if (kind === 'snow') {
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 30); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  } else {
+    g.fillStyle = '#fff6b0'; g.translate(32, 32);
+    g.beginPath(); for (let i = 0; i < 8; i++) { const r = i % 2 ? 6 : 30, a = i / 8 * Math.PI * 2; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const weather = { kind: 'none', pts: null, vel: null, phase: null };
+function applyWeather() {
+  const kind = $('#optWeather').value;
+  if (weather.pts) { weather.pts.removeFromParent(); weather.pts.geometry.dispose(); weather.pts.material.dispose(); weather.pts = null; }
+  weather.kind = kind; if (kind === 'none') return;
+  const N = kind === 'snow' ? 400 : 160, pos = new Float32Array(N * 3);
+  weather.vel = new Float32Array(N); weather.phase = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    pos.set([(Math.random() - 0.5) * 5, Math.random() * 3.2, (Math.random() - 0.5) * 3 - 0.3], i * 3);
+    weather.vel[i] = 0.2 + Math.random() * 0.35; weather.phase[i] = Math.random() * 10;
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const size = { sakura: 0.12, snow: 0.06, sparkle: 0.09, hearts: 0.12 }[kind];
+  weather.pts = new THREE.Points(geo, new THREE.PointsMaterial({ map: weatherTexture(kind), size, transparent: true, depthWrite: false, sizeAttenuation: true }));
+  weather.pts.frustumCulled = false; scene.add(weather.pts);
+}
+function stepWeather(dt, now) {
+  const w = weather; if (!w.pts) return;
+  const a = w.pts.geometry.attributes.position, P = a.array, up = w.kind === 'sparkle';
+  for (let i = 0; i < w.vel.length; i++) {
+    const k = i * 3, ph = w.phase[i];
+    P[k] += Math.sin(now * 0.9 + ph) * 0.15 * dt * (w.kind === 'snow' ? 0.6 : 1.4);
+    P[k + 1] += (up ? 0.4 : -1) * w.vel[i] * dt;
+    P[k + 2] += Math.cos(now * 0.7 + ph) * 0.05 * dt;
+    if (!up && P[k + 1] < 0) { P[k + 1] = 3.2; P[k] = (Math.random() - 0.5) * 5; }
+    if (up && P[k + 1] > 3.2) { P[k + 1] = 0; P[k] = (Math.random() - 0.5) * 5; }
+  }
+  a.needsUpdate = true;
+  if (up) w.pts.material.opacity = 0.65 + 0.35 * Math.sin(now * 6);
+}
+$('#optWeather').onchange = applyWeather;
 
 /* ---- pose export (shared by the PC bridge and BVH) ----
    Local rotations of the normalized humanoid bones (identity in the T-pose), in a frame where the avatar faces +Z.
@@ -2652,6 +2757,8 @@ function bvhCapture(now) {
 }
 
 function extrasAfterUpdate(dt, now) {
+  followCamera();
+  stepWeather(dt, now);
   stepFx(dt, now);
   stepBubble(now);
   updateHands(dt, now);
@@ -2672,7 +2779,7 @@ if (location.protocol === 'file:') {
   // Chrome/Edge allow the camera on file://, Safari/Firefox may not
   console.info('Opened from file://. If the camera is refused, serve this folder with: python -m http.server');
 }
-window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, bodyPos, ownList, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
+window.__mocap = { get avatar() { return avatar; }, get running() { return running; }, get engine() { return engine; }, seen, props, hands, grip, get extraExpr() { return extraExpr; }, spawnProp, bodyPos, ownList, get frozen() { return frozen; }, get weather() { return weather; }, exportPose, exportTrackers, bvhText, parseBVH, play, vrmaBinary, bvhHierarchy, say, get bubble() { return bubble; }, camera,
   testOcclusion(lms, hands, aspect) { const keep = [latest.hands, latest.body]; latest.hands = { landmarks: hands }; latest.body = null; const r = faceOcclusion(lms, aspect); [latest.hands, latest.body] = keep; return r; } };
 </script>
 </body>
