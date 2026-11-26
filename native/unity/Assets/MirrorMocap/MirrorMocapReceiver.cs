@@ -444,7 +444,9 @@ public class MirrorMocapReceiver : MonoBehaviour
             float k = (avatarShoulder > 0.01f ? avatarShoulder : 0.3f) / shoulderRaw.z;
             // image x grows toward the subject's left; canonical +X is the avatar's right
             float x = (mirror ? 1f : -1f) * (shoulderRaw.x - shoulderRef.x) * k, y = -(shoulderRaw.y - shoulderRef.y) * k;
-            target = new Vector3(Mathf.Clamp(x, -0.8f, 0.8f), Mathf.Clamp(y, -0.6f, 0.25f), 0f);
+            // forward / back: the shoulders look wider when you come closer (distance ~ 1 / width); canonical +Z is toward the viewer
+            float z = 0.7f * (1f - shoulderRef.z / Mathf.Max(1f, shoulderRaw.z));
+            target = new Vector3(Mathf.Clamp(x, -0.8f, 0.8f), Mathf.Clamp(y, -0.6f, 0.25f), Mathf.Clamp(z, -0.4f, 0.35f));
         }
         bodyOff = Vector3.Lerp(bodyOff, target, 1f - Mathf.Exp(-dt * (fresh ? 8f : 2f)));
         hips.t.position = hips.restPos + R0 * bodyOff;

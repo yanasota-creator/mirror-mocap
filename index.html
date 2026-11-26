@@ -309,7 +309,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>座りポーズ<small>脚が映っていないとき、椅子に座った形にします</small></span><input type="checkbox" id="optSit"></label>
         <label class="toggle"><span>椅子を表示<small>座りポーズのときに椅子を置きます</small></span><input type="checkbox" id="optChair" checked></label>
         <label class="toggle"><span>机を表示<small>座りポーズのときに前に机を置きます。小物を机に置けます</small></span><input type="checkbox" id="optDesk"></label>
-        <label class="toggle"><span>体の位置も動かす<small>左右に動く・しゃがむとアバターも移動します（「正面リセット」の位置が基準）</small></span><input type="checkbox" id="optMove"></label>
+        <label class="toggle"><span>体の位置も動かす<small>左右・前後に動く、しゃがむとアバターも移動します（「正面リセット」の位置が基準）</small></span><input type="checkbox" id="optMove"></label>
         <div class="slider">
           <div class="top"><label for="optSmooth">なめらかさ</label><output id="smoothOut">45</output></div>
           <input type="range" id="optSmooth" min="0" max="100" value="45">
@@ -2466,8 +2466,10 @@ function stepBodyPos(dt, now) {
     if (!bodyPos.ref) bodyPos.ref = { ...r };
     const R = avatar.rest.pos, shoulderW = R.leftUpperArm && R.rightUpperArm ? R.leftUpperArm.distanceTo(R.rightUpperArm) : 0.3;
     const k = shoulderW / Math.max(1, r.w); // meters per pixel at the user's distance
-    target.set((opts.mirror ? -1 : 1) * (r.x - bodyPos.ref.x) * k, -(r.y - bodyPos.ref.y) * k, 0);
-    target.x = THREE.MathUtils.clamp(target.x, -0.8, 0.8); target.y = THREE.MathUtils.clamp(target.y, -0.6, 0.25);
+    // forward / back from how big the shoulders look: distance is about inversely proportional to their width in the image
+    const forward = 0.7 * (1 - bodyPos.ref.w / Math.max(1, r.w)); // 0.7 m ≈ a usual distance from a laptop camera
+    target.set((opts.mirror ? -1 : 1) * (r.x - bodyPos.ref.x) * k, -(r.y - bodyPos.ref.y) * k, forward);
+    target.x = THREE.MathUtils.clamp(target.x, -0.8, 0.8); target.y = THREE.MathUtils.clamp(target.y, -0.6, 0.25); target.z = THREE.MathUtils.clamp(target.z, -0.4, 0.35);
   }
   bodyPos.off.lerp(target, 1 - Math.exp(-dt * (fresh ? 8 : 2)));
   // sitting: the thighs turn horizontal, so the hips come down by about one thigh length
@@ -2475,7 +2477,7 @@ function stepBodyPos(dt, now) {
   const R = avatar.rest.pos, thigh = R.leftUpperLeg && R.leftLowerLeg ? R.leftUpperLeg.distanceTo(R.leftLowerLeg) : 0.4;
   const sitDrop = sit.amount * thigh * 0.95;
   const flip = isVRM0() ? -1 : 1; // VRM 0.x bone frames are turned 180°
-  hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y - sitDrop, bodyPos.rest.z);
+  hips.position.set(bodyPos.rest.x + flip * bodyPos.off.x, bodyPos.rest.y + bodyPos.off.y - sitDrop, bodyPos.rest.z + flip * bodyPos.off.z);
   placeChair(hips, thigh);
 }
 function placeChair(hips, thigh) {
