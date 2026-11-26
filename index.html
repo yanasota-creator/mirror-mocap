@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
      tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-queCg4bDskXthZDmWTlheovsE0pjfTvGjcdjIoT4ZDc=' 'sha256-MWakDsH2/yYQIR0uApjiMwKY8ibQvxcZS2KcBIHhzIQ=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-queCg4bDskXthZDmWTlheovsE0pjfTvGjcdjIoT4ZDc=' 'sha256-PLIltUlG0Ht5zvw0V5eHs0QxA473tVLSixm5Xw3LZb8=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -128,6 +128,20 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 
 .panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding-block: 8px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; align-content: start; gap: 4px; }
 .sec { padding-block: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+/* tabs and search stay on top while the panel scrolls */
+.panel-nav { position: sticky; top: -8px; z-index: 2; background: var(--panel); margin-top: -8px; padding: 10px 0 8px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.panel-nav input[type=search] { width: 100%; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
+.panel-nav input[type=search]::placeholder { color: var(--muted); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tabs button { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.tabs button:hover { color: var(--fg); }
+.tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.sec[hidden] { display: none; }
+.sec .search-miss { display: none !important; }
+/* grid items keep their content's width by default: a single wide control would push the whole panel past its edge */
+.panel { grid-template-columns: minmax(0, 1fr); }
+.sec { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.sec input[type=text], .sec input[type=url], .sec select { min-width: 0; max-width: 100%; }
 .sec:last-child { border-bottom: 0; }
 .sec h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
 .sec .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -146,8 +160,11 @@ label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; wi
 .toggle input:disabled { opacity: .4; cursor: not-allowed; }
 .toggle:has(input:disabled) { cursor: not-allowed; }
 .privacy { display: grid; gap: 10px; margin-top: 12px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.grid5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.grid5 > *, .grid3 > * { min-width: 0; padding-inline: 4px; }
+/* no keyboard on phones and tablets: the key hints only take room there */
+@media (hover: none) and (pointer: coarse) { .btn kbd, label kbd { display: none; } }
 .btn.sm { padding: 6px 6px; font-size: 12px; justify-content: center; }
 .btn[aria-pressed="true"]:not(.rec) { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #232734); }
 .btn kbd { font: 10px var(--font-mono); color: var(--muted); margin-left: 3px; }
@@ -170,8 +187,8 @@ input.text { width: 100%; background: #232734; border: 1px solid var(--line); bo
 /* collapsible panel sections */
 .sec h2 { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; border-radius: 4px; }
 .sec h2::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s; margin-right: 4px; }
-.sec.closed h2::after { transform: rotate(-45deg); }
-.sec.closed > :not(h2) { display: none !important; }
+.sec.closed:not(.searching) h2::after { transform: rotate(-45deg); }
+.sec.closed:not(.searching) > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
 .liftScore { position: absolute; top: 16px; right: 16px; font: 400 44px var(--font-display); color: #fff; text-shadow: 0 3px 14px rgba(0,0,0,.6); z-index: 4; text-align: right; line-height: 1.1; pointer-events: none; }
 .liftScore small { display: block; font: 600 13px var(--font-body); color: var(--muted); text-shadow: none; }
@@ -273,7 +290,20 @@ body.stream .stage { height: 100%; min-height: 0; }
     </main>
 
     <aside class="panel">
-      <section class="sec">
+      <div class="panel-nav" id="panelNav">
+        <input type="search" id="setSearch" placeholder="設定を探す（例：まばたき）" aria-label="設定を探す" autocomplete="off" enterkeyhint="search">
+        <div class="tabs" role="tablist" aria-label="設定の分類">
+          <button type="button" role="tab" data-cat="all">すべて</button>
+          <button type="button" role="tab" data-cat="basic">基本</button>
+          <button type="button" role="tab" data-cat="face">表情</button>
+          <button type="button" role="tab" data-cat="stream">配信</button>
+          <button type="button" role="tab" data-cat="play">遊ぶ</button>
+          <button type="button" role="tab" data-cat="save">保存</button>
+          <button type="button" role="tab" data-cat="link">連携</button>
+        </div>
+        <p class="status" id="searchNote" aria-live="polite" hidden></p>
+      </div>
+      <section class="sec" data-cat="basic">
         <h2>入力</h2>
         <div class="grid2">
           <button type="button" class="btn" id="camBtn">カメラ開始</button>
@@ -285,8 +315,7 @@ body.stream .stage { height: 100%; min-height: 0; }
           <label class="toggle"><span>表示をロック<small>ロック中は表示をオンにできません。配信・画面共有中の顔バレ防止に</small></span><input type="checkbox" id="optPreviewLock"></label>
         </div>
       </section>
-
-      <section class="sec">
+      <section class="sec" data-cat="basic">
         <h2>アバター</h2>
         <div class="cur">
           <div class="cur-th" id="curThumb" aria-hidden="true"></div>
@@ -299,18 +328,45 @@ body.stream .stage { height: 100%; min-height: 0; }
         </div>
         <label class="toggle"><span>読み込んだVRMをこのブラウザに保存<small>次からは「モデルを選ぶ」に出ます。保存先はこのブラウザの中だけです</small></span><input type="checkbox" id="optSaveVrm" checked></label>
       </section>
-
-      <section class="sec">
-        <h2>処理モード</h2>
-        <select id="optQuality" aria-label="処理モード">
-          <option value="light">軽量（速さ優先・古いPC向け）</option>
-          <option value="standard" selected>標準（精度と速さのバランス）</option>
-          <option value="high">高精度（GPUが強いPC向け）</option>
+      <section class="sec" data-cat="face">
+        <h2>表情</h2>
+        <div class="grid5" id="exprBtns">
+          <button type="button" class="btn sm" data-expr="happy" aria-pressed="false">喜<kbd>1</kbd></button>
+          <button type="button" class="btn sm" data-expr="angry" aria-pressed="false">怒<kbd>2</kbd></button>
+          <button type="button" class="btn sm" data-expr="sad" aria-pressed="false">哀<kbd>3</kbd></button>
+          <button type="button" class="btn sm" data-expr="surprised" aria-pressed="false">驚<kbd>4</kbd></button>
+          <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
+        </div>
+        <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
+        <button type="button" class="btn" id="exprLockBtn" aria-pressed="false">表情を固定<kbd>H</kbd></button>
+        <label for="optBlush">頬染め<kbd>B</kbd></label>
+        <select id="optBlush">
+          <option value="off">オフ</option>
+          <option value="auto" selected>自動（笑顔・顔を隠す・撫でる）</option>
+          <option value="on">いつも</option>
         </select>
-        <p class="hint" id="perfDetail">推定にかかる時間がここに出ます。</p>
+        <div id="customExprWrap" hidden>
+          <label>このモデル独自の表情</label>
+          <div class="grid3" id="customExpr"></div>
+        </div>
+        <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
+        <label class="toggle"><span>グッド👍で「GOOD!」<small>親指を立てると、手の上にマークが出ます</small></span><input type="checkbox" id="optGood" checked></label>
+        <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
+        <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
+        <label class="toggle"><span>うなずき・首振りに文字<small>うなずくと「うんうん」、首を横に振ると「ううん」が頭の横に出ます</small></span><input type="checkbox" id="optNod"></label>
+        <label class="toggle"><span>表情メーター<small>今どの表情がどれくらい出ているかを表示します。感度を合わせるときの目安に</small></span><input type="checkbox" id="optMeter"></label>
+        <div class="meter" id="exprMeter" hidden></div>
+        <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
+        <label class="toggle"><span>目線がマウスを追う<small>顔が映っていないとき、マウスの方を見ます（小窓のマスコットにも）</small></span><input type="checkbox" id="optMouseGaze" checked></label>
+        <label class="toggle"><span>クリックで反応<small>頭をクリックすると喜び、体をクリックすると驚きます</small></span><input type="checkbox" id="optPoke" checked></label>
+        <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
+        <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
+        <div class="slider">
+          <div class="top"><label for="optMicGain">マイク感度</label><output id="micGainOut">50</output></div>
+          <input type="range" id="optMicGain" min="0" max="100" value="50">
+        </div>
       </section>
-
-      <section class="sec">
+      <section class="sec" data-cat="basic face">
         <h2>トラッキング</h2>
         <label class="toggle">体<input type="checkbox" id="optBody" checked></label>
         <label class="toggle">顔と表情<input type="checkbox" id="optFace" checked></label>
@@ -349,8 +405,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>パーフェクトシンク<small>表情を52種類（iPhone の顔認識と同じ名前）で持っているモデルなら、眉・頬・口のゆがみまで細かく動かします</small></span><input type="checkbox" id="optPerfectSync" checked></label>
         <p class="status" id="psStatus"></p>
       </section>
-
-      <section class="sec">
+      <section class="sec" data-cat="basic face">
         <h2>調整</h2>
         <button type="button" class="btn" id="calibBtn">正面リセット<kbd>C</kbd></button>
         <label class="toggle"><span>今の顔を「無表情」として記憶する<small>何もしていないのに笑顔や口開きに見えるときに効きます（記憶はページを閉じるまで）</small></span><input type="checkbox" id="optNeutral" checked></label>
@@ -366,6 +421,7 @@ body.stream .stage { height: 100%; min-height: 0; }
             <tr><td><kbd>Space</kbd></td><td>ポーズを固定／解除（スクショ用）</td></tr>
             <tr><td><kbd>H</kbd></td><td>表情を固定／解除（体は動き続けます）</td></tr>
             <tr><td><kbd>B</kbd></td><td>頬染めの切り替え（オフ → 自動 → いつも）</td></tr>
+            <tr><td><kbd>/</kbd></td><td>設定を探す（Esc で検索をやめる）</td></tr>
             <tr><td>右ドラッグ</td><td>カメラを平行移動（アバターを画面の端に寄せる）</td></tr>
             <tr><td>ホイール</td><td>ズーム</td></tr>
           </table>
@@ -377,73 +433,16 @@ body.stream .stage { height: 100%; min-height: 0; }
         </div>
         <p class="hint">「設定を保存」でファイルに書き出し、別のPCやブラウザで「設定を読込」すると同じ設定になります。</p>
       </section>
-
-      <section class="sec">
-        <h2>録画</h2>
-        <div class="grid2">
-          <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
-          <select id="recFormat" aria-label="録画の保存形式">
-            <option value="mp4" selected>MP4（スマホ・SNS向け）</option>
-            <option value="webm">WebM</option>
-          </select>
-        </div>
-        <label class="toggle"><span>3秒数えてから録画<small>押したあと、ポーズを取る時間を取ります（もう一度押すと取り消し）</small></span><input type="checkbox" id="optRecDelay"></label>
-        <p class="hint">停止するとファイルとして保存されます（MP4 で録れないブラウザでは WebM）。「マイクで口パク」がオンなら声も入ります。</p>
-        <div class="grid2">
-          <label class="btn sm file">BGMを読み込む<input type="file" id="bgmFile" accept="audio/*"></label>
-          <button type="button" class="btn sm" id="bgmPlay" disabled>BGM 再生</button>
-        </div>
-        <div class="slider">
-          <div class="top"><label for="optBgmVol">BGMの音量</label><output id="bgmVolOut">40</output></div>
-          <input type="range" id="optBgmVol" min="0" max="100" value="40">
-          <p class="hint" id="bgmName">BGMは録画にも入ります（くり返し再生）。</p>
-        </div>
-        <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
-        <label class="toggle"><span>スクショの背景を透明にする<small>アバターと小物だけが写ります（サムネイルやイラストの素材向け）</small></span><input type="checkbox" id="optShotAlpha"></label>
-        <div class="grid2">
-          <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
-          <select id="motionFormat" aria-label="モーションの保存形式">
-            <option value="vrma" selected>VRMA（表情も）</option>
-            <option value="bvh">BVH</option>
-          </select>
-        </div>
-        <label class="btn file" id="bvhPlayLabel">モーションを再生（VRMA / BVH）<input type="file" id="bvhFile" accept=".vrma,.bvh"></label>
-        <button type="button" class="btn" id="bvhStop" hidden>再生を止める</button>
-        <p class="hint">VRMA は VRM 公式のモーション形式で、表情も入ります（VRoid Hub・cluster・three-vrm など）。BVH は体の動きだけで、Blender などに読み込めます。配布されている VRMA（ダンスなど）も再生できます。</p>
+      <section class="sec" data-cat="basic">
+        <h2>処理モード</h2>
+        <select id="optQuality" aria-label="処理モード">
+          <option value="light">軽量（速さ優先・古いPC向け）</option>
+          <option value="standard" selected>標準（精度と速さのバランス）</option>
+          <option value="high">高精度（GPUが強いPC向け）</option>
+        </select>
+        <p class="hint" id="perfDetail">推定にかかる時間がここに出ます。</p>
       </section>
-
-      <section class="sec">
-        <h2>外部連携</h2>
-        <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
-        <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
-        <div id="bridgeCodeRow" hidden>
-          <label for="bridgeCode">接続コード<small>（ファイルから開いたときだけ必要。bridge.py の画面に出ている8文字）</small></label>
-          <input type="text" id="bridgeCode" placeholder="ABCD-EFGH" autocomplete="off" spellcheck="false" maxlength="12">
-        </div>
-        <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
-        <p class="status" id="vmcInStatus" aria-live="polite"></p>
-        <label for="vrcParam">VRChat：表情ボタンで送るパラメータ名</label>
-        <input type="text" id="vrcParam" class="text" placeholder="例：Expression（空欄なら送らない）" maxlength="64" spellcheck="false" autocomplete="off">
-        <p class="hint">表情ボタンを押すと、そのパラメータに番号（喜=1・怒=2・哀=3・驚=4・穏=5、解除=0）を送ります。番号の意味はアバターの作り次第です。</p>
-        <label class="toggle"><span>VRChat：両手を上げるとジャンプ<small>両手を頭より上に上げると、VRChat でジャンプします</small></span><input type="checkbox" id="optJump"></label>
-        <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
-        <p class="hint"><b>OBS に背景なしで映す</b>：OBS の「ブラウザ」ソースに次のURLを入れると、このページの動きが透明な背景で映ります（ブリッジが必要）。</p>
-        <div class="chat"><input type="text" class="text" id="viewerUrl" readonly aria-label="OBS用ビューアのURL"><button type="button" class="btn sm" id="copyViewer">コピー</button></div>
-      </section>
-
-      <section class="sec">
-        <h2>吹き出し・チャット</h2>
-        <div class="chat">
-          <input type="text" id="chatText" maxlength="144" placeholder="しゃべらせたい文字（Enter で送信）" aria-label="吹き出しに出す文字">
-          <button type="button" class="btn sm" id="chatSend">送信</button>
-        </div>
-        <label class="toggle"><span>画面に吹き出しを出す<small>アバターの頭の横に表示して、数秒で消えます</small></span><input type="checkbox" id="optBubble" checked></label>
-        <label class="toggle"><span>VRChat のチャットボックスにも送る<small>「PCブリッジに送信」がオンのときに使えます</small></span><input type="checkbox" id="optChatVrc" checked></label>
-        <label class="toggle"><span>音声認識で入力（字幕）<small>話した言葉を文字にして送ります。<b>音声は Google の音声認識サービスに送られます</b>（Chrome / Edge）</small></span><input type="checkbox" id="optSpeech"></label>
-        <p class="status" id="speechStatus" aria-live="polite"></p>
-      </section>
-
-      <section class="sec">
+      <section class="sec" data-cat="stream">
         <h2>配信</h2>
         <label for="optBg">背景</label>
         <select id="optBg" aria-label="背景">
@@ -481,47 +480,17 @@ body.stream .stage { height: 100%; min-height: 0; }
         <button type="button" class="btn" id="pipBtn">デスクトップに浮かべる（小窓）</button>
         <p class="hint">「デスクトップに浮かべる」は、ほかのアプリの上に常に表示される小窓にアバターを出します（Chrome / Edge）。OBS では「ウィンドウキャプチャ」でこの画面を取り込み、グリーンバックなら「クロマキー」フィルタで背景を消せます。配信モード中は Esc で戻ります。</p>
       </section>
-
-      <section class="sec">
-        <h2>表情</h2>
-        <div class="grid5" id="exprBtns">
-          <button type="button" class="btn sm" data-expr="happy" aria-pressed="false">喜<kbd>1</kbd></button>
-          <button type="button" class="btn sm" data-expr="angry" aria-pressed="false">怒<kbd>2</kbd></button>
-          <button type="button" class="btn sm" data-expr="sad" aria-pressed="false">哀<kbd>3</kbd></button>
-          <button type="button" class="btn sm" data-expr="surprised" aria-pressed="false">驚<kbd>4</kbd></button>
-          <button type="button" class="btn sm" data-expr="relaxed" aria-pressed="false">穏<kbd>5</kbd></button>
+      <section class="sec" data-cat="stream play">
+        <h2>アクセサリー</h2>
+        <div class="grid2">
+          <label class="toggle">ねこ耳<input type="checkbox" id="accEars"></label>
+          <label class="toggle">王冠<input type="checkbox" id="accCrown"></label>
+          <label class="toggle">メガネ<input type="checkbox" id="accGlasses"></label>
+          <label class="toggle">天使の輪<input type="checkbox" id="accHalo"></label>
         </div>
-        <p class="hint">押すとその表情になり、もう一度押すと戻ります。キーボードの 1〜5 でも切り替え、0 で解除。</p>
-        <button type="button" class="btn" id="exprLockBtn" aria-pressed="false">表情を固定<kbd>H</kbd></button>
-        <label for="optBlush">頬染め<kbd>B</kbd></label>
-        <select id="optBlush">
-          <option value="off">オフ</option>
-          <option value="auto" selected>自動（満面の笑み・両手で顔を隠す・頭を撫でる）</option>
-          <option value="on">いつも</option>
-        </select>
-        <div id="customExprWrap" hidden>
-          <label>このモデル独自の表情</label>
-          <div class="grid3" id="customExpr"></div>
-        </div>
-        <label class="toggle"><span>手の形で表情<small>ピース✌ をすると笑顔になります</small></span><input type="checkbox" id="optGesture" checked></label>
-        <label class="toggle"><span>グッド👍で「GOOD!」<small>親指を立てると、手の上にマークが出ます</small></span><input type="checkbox" id="optGood" checked></label>
-        <label class="toggle"><span>指差しでレーザーポインター<small>人差し指だけを伸ばすと、指先から光の線が出ます</small></span><input type="checkbox" id="optLaser"></label>
-        <label class="toggle"><span>エフェクト<small>表情ボタンやピースのときに、喜でハート、驚で「！」、怒で怒りマーク、哀で涙が出ます</small></span><input type="checkbox" id="optFx" checked></label>
-        <label class="toggle"><span>うなずき・首振りに文字<small>うなずくと「うんうん」、首を横に振ると「ううん」が頭の横に出ます</small></span><input type="checkbox" id="optNod"></label>
-        <label class="toggle"><span>表情メーター<small>今どの表情がどれくらい出ているかを表示します。感度を合わせるときの目安に</small></span><input type="checkbox" id="optMeter"></label>
-        <div class="meter" id="exprMeter" hidden></div>
-        <label class="toggle"><span>待機中にゆらゆら<small>体や顔が映っていないとき、ゆっくり揺れて首をかしげます</small></span><input type="checkbox" id="optIdleSway" checked></label>
-        <label class="toggle"><span>目線がマウスを追う<small>顔が映っていないとき、マウスの方を見ます（小窓のマスコットにも）</small></span><input type="checkbox" id="optMouseGaze" checked></label>
-        <label class="toggle"><span>クリックで反応<small>頭をクリックすると喜び、体をクリックすると驚きます</small></span><input type="checkbox" id="optPoke" checked></label>
-        <label class="toggle"><span>自動まばたき・カメラ目線<small>顔が認識されていないときも、まばたきしてカメラの方を見ます</small></span><input type="checkbox" id="optAutoEyes" checked></label>
-        <label class="toggle"><span>マイクで口パク<small>声の大きさで口を動かします。音声は録音も送信もしません</small></span><input type="checkbox" id="optMic"></label>
-        <div class="slider">
-          <div class="top"><label for="optMicGain">マイク感度</label><output id="micGainOut">50</output></div>
-          <input type="range" id="optMicGain" min="0" max="100" value="50">
-        </div>
+        <p class="hint">頭に付いて一緒に動きます。モデルによって位置が少しずれることがあります。</p>
       </section>
-
-      <section class="sec">
+      <section class="sec" data-cat="play">
         <h2>小物</h2>
         <div class="grid3" id="propBtns">
           <button type="button" class="btn sm" data-prop="ball">ボール</button>
@@ -541,19 +510,69 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>重力<small>オンにすると落ちて跳ね、投げられます。オフだと空中に浮きます</small></span><input type="checkbox" id="optGravity"></label>
         <p class="hint">リフティングゲーム：頭の上からボールが落ちてきます。頭や手で打ち上げて、床に落とさずに何回続くか数えます。<br>手を<b>握る</b>と近くの小物を掴み、<b>開く</b>と離します。開いた手で触ると押せます。マウスや指でドラッグしても動かせます（離すと投げられます）。</p>
       </section>
-
-      <section class="sec">
-        <h2>アクセサリー</h2>
-        <div class="grid2">
-          <label class="toggle">ねこ耳<input type="checkbox" id="accEars"></label>
-          <label class="toggle">王冠<input type="checkbox" id="accCrown"></label>
-          <label class="toggle">メガネ<input type="checkbox" id="accGlasses"></label>
-          <label class="toggle">天使の輪<input type="checkbox" id="accHalo"></label>
+      <section class="sec" data-cat="play stream link">
+        <h2>吹き出し・チャット</h2>
+        <div class="chat">
+          <input type="text" id="chatText" maxlength="144" placeholder="しゃべらせたい文字（Enter で送信）" aria-label="吹き出しに出す文字">
+          <button type="button" class="btn sm" id="chatSend">送信</button>
         </div>
-        <p class="hint">頭に付いて一緒に動きます。モデルによって位置が少しずれることがあります。</p>
+        <label class="toggle"><span>画面に吹き出しを出す<small>アバターの頭の横に表示して、数秒で消えます</small></span><input type="checkbox" id="optBubble" checked></label>
+        <label class="toggle"><span>VRChat のチャットボックスにも送る<small>「PCブリッジに送信」がオンのときに使えます</small></span><input type="checkbox" id="optChatVrc" checked></label>
+        <label class="toggle"><span>音声認識で入力（字幕）<small>話した言葉を文字にして送ります。<b>音声は Google の音声認識サービスに送られます</b>（Chrome / Edge）</small></span><input type="checkbox" id="optSpeech"></label>
+        <p class="status" id="speechStatus" aria-live="polite"></p>
       </section>
-
-      <section class="sec">
+      <section class="sec" data-cat="save stream">
+        <h2>録画</h2>
+        <div class="grid2">
+          <button type="button" class="btn rec" id="recBtn" aria-pressed="false"><span class="dot"></span><span id="recLabel">3D画面を録画</span></button>
+          <select id="recFormat" aria-label="録画の保存形式">
+            <option value="mp4" selected>MP4（スマホ・SNS向け）</option>
+            <option value="webm">WebM</option>
+          </select>
+        </div>
+        <label class="toggle"><span>3秒数えてから録画<small>押したあと、ポーズを取る時間を取ります（もう一度押すと取り消し）</small></span><input type="checkbox" id="optRecDelay"></label>
+        <p class="hint">停止するとファイルとして保存されます（MP4 で録れないブラウザでは WebM）。「マイクで口パク」がオンなら声も入ります。</p>
+        <div class="grid2">
+          <label class="btn sm file">BGMを読み込む<input type="file" id="bgmFile" accept="audio/*"></label>
+          <button type="button" class="btn sm" id="bgmPlay" disabled>BGM 再生</button>
+        </div>
+        <div class="slider">
+          <div class="top"><label for="optBgmVol">BGMの音量</label><output id="bgmVolOut">40</output></div>
+          <input type="range" id="optBgmVol" min="0" max="100" value="40">
+          <p class="hint" id="bgmName">BGMは録画にも入ります（くり返し再生）。</p>
+        </div>
+        <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
+        <label class="toggle"><span>スクショの背景を透明にする<small>アバターと小物だけが写ります（サムネイルやイラストの素材向け）</small></span><input type="checkbox" id="optShotAlpha"></label>
+        <div class="grid2">
+          <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
+          <select id="motionFormat" aria-label="モーションの保存形式">
+            <option value="vrma" selected>VRMA（表情も）</option>
+            <option value="bvh">BVH</option>
+          </select>
+        </div>
+        <label class="btn file" id="bvhPlayLabel">モーションを再生（VRMA / BVH）<input type="file" id="bvhFile" accept=".vrma,.bvh"></label>
+        <button type="button" class="btn" id="bvhStop" hidden>再生を止める</button>
+        <p class="hint">VRMA は VRM 公式のモーション形式で、表情も入ります（VRoid Hub・cluster・three-vrm など）。BVH は体の動きだけで、Blender などに読み込めます。配布されている VRMA（ダンスなど）も再生できます。</p>
+      </section>
+      <section class="sec" data-cat="link">
+        <h2>外部連携</h2>
+        <label class="toggle"><span>PCブリッジに送信<small>PCで bridge.py を起動しておくと、VSeeFace・Warudo など（VMC）と VRChat（OSC）に動きを送れます</small></span><input type="checkbox" id="optBridge"></label>
+        <p class="status" id="bridgeStatus" aria-live="polite">オフ</p>
+        <div id="bridgeCodeRow" hidden>
+          <label for="bridgeCode">接続コード<small>（ファイルから開いたときだけ必要。bridge.py の画面に出ている8文字）</small></label>
+          <input type="text" id="bridgeCode" placeholder="ABCD-EFGH" autocomplete="off" spellcheck="false" maxlength="12">
+        </div>
+        <label class="toggle"><span>外部トラッカーの動きで動かす（VMC受信）<small>mocopi や iPhone の顔トラッキングアプリなど、VMC を送るアプリの動きをブリッジ経由で受け取ります（ポート 39542）。送られてきた部分だけを上書きします</small></span><input type="checkbox" id="optVmcIn"></label>
+        <p class="status" id="vmcInStatus" aria-live="polite"></p>
+        <label for="vrcParam">VRChat：表情ボタンで送るパラメータ名</label>
+        <input type="text" id="vrcParam" class="text" placeholder="例：Expression（空欄なら送らない）" maxlength="64" spellcheck="false" autocomplete="off">
+        <p class="hint">表情ボタンを押すと、そのパラメータに番号（喜=1・怒=2・哀=3・驚=4・穏=5、解除=0）を送ります。番号の意味はアバターの作り次第です。</p>
+        <label class="toggle"><span>VRChat：両手を上げるとジャンプ<small>両手を頭より上に上げると、VRChat でジャンプします</small></span><input type="checkbox" id="optJump"></label>
+        <p class="hint">使い方は GitHub の native/README.md の「外部連携」にあります。</p>
+        <p class="hint"><b>OBS に背景なしで映す</b>：OBS の「ブラウザ」ソースに次のURLを入れると、このページの動きが透明な背景で映ります（ブリッジが必要）。</p>
+        <div class="chat"><input type="text" class="text" id="viewerUrl" readonly aria-label="OBS用ビューアのURL"><button type="button" class="btn sm" id="copyViewer">コピー</button></div>
+      </section>
+      <section class="sec" data-cat="basic">
         <h2>精度を上げるコツ</h2>
         <ul class="tips">
           <li><b>明るく</b>：顔に正面から光が当たると指と表情が安定します。</li>
@@ -3726,6 +3745,63 @@ function stepFaceExtras(dt, now) {
   stepNod(now);
   stepMeter(now);
 }
+/* ================================================================
+   Panel navigation: category tabs and a settings search (/ key)
+   ================================================================ */
+const NAV_KEY = 'mirror-mocap-tab';
+const panelSecs = [...document.querySelectorAll('.panel .sec')];
+// katakana -> hiragana and lower case, so "マバタキ" and "まばたき", "VRM" and "vrm" find the same thing
+const fold = (t) => t.toLowerCase().replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60)).replace(/\s+/g, '');
+let navTab = 'all';
+try { navTab = localStorage.getItem(NAV_KEY) || 'all'; } catch {}
+if (!document.querySelector(`#panelNav [data-cat="${navTab}"]`)) navTab = 'all';
+
+function applyPanelNav() {
+  const q = fold($('#setSearch').value.trim());
+  document.querySelectorAll('#panelNav [data-cat]').forEach(b => {
+    const on = !q && b.dataset.cat === navTab;
+    b.setAttribute('aria-selected', String(on)); b.classList.toggle('on', on);
+  });
+  let found = 0;
+  for (const sec of panelSecs) {
+    const items = [...sec.children].filter(c => c.tagName !== 'H2');
+    if (!q) {
+      // tabs: show the sections of the chosen kind; each keeps its own open / closed state
+      sec.hidden = navTab !== 'all' && !sec.dataset.cat.split(' ').includes(navTab);
+      sec.classList.remove('searching');
+      items.forEach(c => c.classList.remove('search-miss'));
+      continue;
+    }
+    // search: every section, only the matching rows, opened while searching (the remembered state is left alone)
+    const title = fold(sec.querySelector('h2').textContent);
+    const hit = items.map(c => title.includes(q) || fold(c.textContent + ' ' + (c.querySelector('input,select')?.getAttribute('aria-label') ?? '')).includes(q));
+    items.forEach((c, i) => c.classList.toggle('search-miss', !hit[i]));
+    const any = hit.some(Boolean);
+    sec.hidden = !any; sec.classList.toggle('searching', any);
+    if (any) found += hit.filter(Boolean).length;
+  }
+  const note = $('#searchNote');
+  note.hidden = !q;
+  note.textContent = q ? (found ? `${found} 件` : '見つかりませんでした。別の言葉で試してください（例：口、録画、背景）') : '';
+}
+document.querySelectorAll('#panelNav [data-cat]').forEach(b => {
+  b.onclick = () => {
+    navTab = b.dataset.cat; $('#setSearch').value = '';
+    try { localStorage.setItem(NAV_KEY, navTab); } catch {}
+    applyPanelNav();
+    $('.panel').scrollTop = 0;
+  };
+});
+$('#setSearch').addEventListener('input', applyPanelNav);
+$('#setSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.stopPropagation(); $('#setSearch').value = ''; applyPanelNav(); $('#setSearch').blur(); }
+});
+addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea')) return;
+  if (document.body.classList.contains('stream')) return;
+  e.preventDefault(); $('#setSearch').focus(); $('#setSearch').select();
+});
+applyPanelNav();
 /* ---------------- Boot ---------------- */
 const savedModel = loadSettings();
 applyRenderQuality();

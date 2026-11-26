@@ -114,6 +114,20 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 
 .panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding-block: 8px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; align-content: start; gap: 4px; }
 .sec { padding-block: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+/* tabs and search stay on top while the panel scrolls */
+.panel-nav { position: sticky; top: -8px; z-index: 2; background: var(--panel); margin-top: -8px; padding: 10px 0 8px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.panel-nav input[type=search] { width: 100%; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
+.panel-nav input[type=search]::placeholder { color: var(--muted); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tabs button { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.tabs button:hover { color: var(--fg); }
+.tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.sec[hidden] { display: none; }
+.sec .search-miss { display: none !important; }
+/* grid items keep their content's width by default: a single wide control would push the whole panel past its edge */
+.panel { grid-template-columns: minmax(0, 1fr); }
+.sec { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.sec input[type=text], .sec input[type=url], .sec select { min-width: 0; max-width: 100%; }
 .sec:last-child { border-bottom: 0; }
 .sec h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
 .sec .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -132,8 +146,11 @@ label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; wi
 .toggle input:disabled { opacity: .4; cursor: not-allowed; }
 .toggle:has(input:disabled) { cursor: not-allowed; }
 .privacy { display: grid; gap: 10px; margin-top: 12px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.grid5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.grid5 > *, .grid3 > * { min-width: 0; padding-inline: 4px; }
+/* no keyboard on phones and tablets: the key hints only take room there */
+@media (hover: none) and (pointer: coarse) { .btn kbd, label kbd { display: none; } }
 .btn.sm { padding: 6px 6px; font-size: 12px; justify-content: center; }
 .btn[aria-pressed="true"]:not(.rec) { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #232734); }
 .btn kbd { font: 10px var(--font-mono); color: var(--muted); margin-left: 3px; }
@@ -156,8 +173,8 @@ input.text { width: 100%; background: #232734; border: 1px solid var(--line); bo
 /* collapsible panel sections */
 .sec h2 { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; border-radius: 4px; }
 .sec h2::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s; margin-right: 4px; }
-.sec.closed h2::after { transform: rotate(-45deg); }
-.sec.closed > :not(h2) { display: none !important; }
+.sec.closed:not(.searching) h2::after { transform: rotate(-45deg); }
+.sec.closed:not(.searching) > :not(h2) { display: none !important; }
 .sec h2:hover { color: var(--fg); }
 .liftScore { position: absolute; top: 16px; right: 16px; font: 400 44px var(--font-display); color: #fff; text-shadow: 0 3px 14px rgba(0,0,0,.6); z-index: 4; text-align: right; line-height: 1.1; pointer-events: none; }
 .liftScore small { display: block; font: 600 13px var(--font-body); color: var(--muted); text-shadow: none; }

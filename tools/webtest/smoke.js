@@ -137,6 +137,21 @@ const cam = process.argv[2];
     const status = await ev(() => document.getElementById('psStatus').textContent);
     await stopFace(); return ok && /パーフェクトシンクで動かしています/.test(status);
   });
+  await check('設定のタブと検索で、目的の設定だけが出る', async () => {
+    const visible = (id) => ev((id) => !!document.getElementById(id)?.offsetParent, id);
+    await page.click('#panelNav [data-cat="face"]');
+    const tab = await visible('optEmotion') && !(await visible('recBtn')) && !(await visible('optBridge'));
+    await page.click('#panelNav [data-cat="all"]');
+    await page.fill('#setSearch', 'マバタキ'); // katakana finds the hiragana label
+    const search = await visible('optBlinkGain') && !(await visible('optMouthGain')) && !(await visible('propClear'))
+      && /件/.test(await ev(() => document.getElementById('searchNote').textContent));
+    await page.fill('#setSearch', 'ぜったいにない言葉');
+    const none = /見つかりません/.test(await ev(() => document.getElementById('searchNote').textContent));
+    await page.press('#setSearch', 'Escape');
+    const back = await visible('recBtn') && await visible('optMouthGain');
+    await page.mouse.click(30, 700);
+    return tab && search && none && back;
+  });
   if (cam) {
     await check('カメラ映像から体が推定される', async () => { await page.click('#camBtn'); return until(() => performance.now() / 1000 - window.__mocap.seen.pose < 2, 120000); });
   }
