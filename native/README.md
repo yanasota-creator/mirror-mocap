@@ -15,6 +15,19 @@ Web版と同じ「内蔵カメラで体・顔・指を推定してVRMアバタ�
 
 ---
 
+## かんたん起動（コマンドを打たない方法）
+Python を入れたあと（https://www.python.org/downloads/ 、Windows ではインストール画面で「Add python.exe to PATH」にチェック）、次のファイルを**ダブルクリック**するだけで起動します。初回だけ、必要な部品を自動で入れます（数分）。
+
+| 起動するもの | Windows | Mac |
+|---|---|---|
+| トラッカー（カメラ → Unity） | `tracker/start-windows.bat` | `tracker/start-mac.command` |
+| ブリッジ（Web版 ⇄ VRChat・VSeeFace など） | `bridge/start-windows.bat` | `bridge/start-mac.command` |
+
+- Windows で「WindowsによってPCが保護されました」と出たら「詳細情報」→「実行」を押します
+- Mac で「開けません」と出たら、ファイルを右クリック →「開く」を選びます。それでも開かないときは、ターミナルで `chmod +x ` と入力してからファイルをドラッグして Enter を押します（実行してよいという印を付けるコマンドです）
+
+以下は、コマンドで起動する場合の手順です。
+
 ## 1. トラッカー（Python）の準備
 
 1. Python 3.10〜3.12 を入れる（https://www.python.org/downloads/ 。インストール時に「Add python.exe to PATH」にチェック）

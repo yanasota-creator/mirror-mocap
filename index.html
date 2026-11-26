@@ -328,7 +328,12 @@ body.stream .stage { height: 100%; min-height: 0; }
             <tr><td>ホイール</td><td>ズーム</td></tr>
           </table>
         </details>
-        <button type="button" class="btn" id="resetSettings">設定を初期化</button>
+        <div class="grid3">
+          <button type="button" class="btn sm" id="exportSettings">設定を保存</button>
+          <label class="btn sm file">設定を読込<input type="file" id="importSettings" accept=".json,application/json"></label>
+          <button type="button" class="btn sm" id="resetSettings">初期化</button>
+        </div>
+        <p class="hint">「設定を保存」でファイルに書き出し、別のPCやブラウザで「設定を読込」すると同じ設定になります。</p>
       </section>
 
       <section class="sec">
@@ -343,6 +348,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <label class="toggle"><span>3秒数えてから録画<small>押したあと、ポーズを取る時間を取ります（もう一度押すと取り消し）</small></span><input type="checkbox" id="optRecDelay"></label>
         <p class="hint">停止するとファイルとして保存されます（MP4 で録れないブラウザでは WebM）。「マイクで口パク」がオンなら声も入ります。</p>
         <button type="button" class="btn" id="shotBtn">スクリーンショット（PNG）<kbd>P</kbd></button>
+        <label class="toggle"><span>スクショの背景を透明にする<small>アバターと小物だけが写ります（サムネイルやイラストの素材向け）</small></span><input type="checkbox" id="optShotAlpha"></label>
         <div class="grid2">
           <button type="button" class="btn rec" id="bvhBtn" aria-pressed="false"><span class="dot"></span><span id="bvhLabel">モーションを記録</span></button>
           <select id="motionFormat" aria-label="モーションの保存形式">
@@ -584,7 +590,7 @@ $('#optMirror').onchange = () => {
 /* ---------------- Three.js stage ---------------- */
 const stage = $('#stage');
 const canvas = $('#three');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); // alpha: for see-through screenshots (the scene always draws a background otherwise)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
@@ -1674,7 +1680,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -1771,8 +1777,13 @@ stage.addEventListener('pointerdown', () => { if (document.body.classList.contai
 const stamp = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
 function download(url, name) { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); }
 $('#shotBtn').onclick = () => {
+  const clear = $('#optShotAlpha').checked;
+  const keep = { bg: scene.background, fog: scene.fog, floor: floor.visible, ring: ring.visible, grid: grid.visible };
+  if (clear) { scene.background = null; scene.fog = null; floor.visible = ring.visible = grid.visible = false; if (weather.pts) weather.pts.visible = false; }
   renderer.render(scene, camera); // read the canvas in the same task as the draw
-  download(canvas.toDataURL('image/png'), `mocap-${stamp()}.png`);
+  const url = canvas.toDataURL('image/png');
+  if (clear) { scene.background = keep.bg; scene.fog = keep.fog; floor.visible = keep.floor; ring.visible = keep.ring; grid.visible = keep.grid; if (weather.pts) weather.pts.visible = true; }
+  download(url, `mocap-${stamp()}${clear ? '-transparent' : ''}.png`);
 };
 
 /* ---- big 3-2-1 on the stage, then run fn ---- */
@@ -2388,6 +2399,25 @@ function stepBodyPos(dt, now) {
 const calibOrig = $('#calibBtn').onclick;
 function calibrateNow() { calibOrig(); bodyPos.ref = null; }
 $('#calibBtn').onclick = () => { if ($('#optCalibDelay').checked) countdown(3, calibrateNow); else calibrateNow(); };
+$('#exportSettings').onclick = () => {
+  saveSettings();
+  let data = {}; try { data = JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? {}; } catch {}
+  if (String(data.model).startsWith('own:')) delete data.model; // your own VRM lives only in this browser
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ app: 'mirror-mocap', version: 1, settings: data }, null, 2)], { type: 'application/json' }));
+  download(url, `mirror-mocap-settings-${stamp()}.json`); setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+$('#importSettings').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (j.app !== 'mirror-mocap' || typeof j.settings !== 'object') throw new Error('not ours');
+    const clean = {}; // only known settings, with plain values
+    for (const id of SAVED_IDS) if (id in j.settings && ['string', 'boolean', 'number'].includes(typeof j.settings[id])) clean[id] = j.settings[id];
+    if (typeof j.settings.model === 'string' && MODELS.some(m => m.id === j.settings.model)) clean.model = j.settings.model;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(clean));
+    location.reload();
+  } catch { toast('設定ファイルを読み込めませんでした', 'このページの「設定を保存」で書き出したファイル（.json）を選んでください。'); }
+};
 $('#resetSettings').onclick = () => {
   if (!confirm('設定を初期状態に戻して、ページを開き直しますか？\n（このブラウザに保存した自分のVRMは消えません）')) return;
   try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem(CLOSED_KEY); } catch {}
