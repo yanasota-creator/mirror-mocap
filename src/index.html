@@ -129,6 +129,14 @@
           <input type="range" id="optBlinkGain" min="0" max="100" value="50">
           <p class="hint">上げると小さな動きでも反応し、下げると大きく動かしたときだけ反応します。</p>
         </div>
+        <label class="toggle"><span>眉と目から喜怒哀驚を再現<small>眉を寄せると怒り、眉尻を下げて口角を下げると悲しみ、目を見開いて眉を上げると驚きの表情になります</small></span><input type="checkbox" id="optEmotion" checked></label>
+        <div class="slider">
+          <div class="top"><label for="optEmotionGain">怒り・悲しみ・驚きの感度</label><output id="emotionGainOut">50</output></div>
+          <input type="range" id="optEmotionGain" min="0" max="100" value="50">
+          <p class="hint">考えごとをしているだけで怒り顔になるときは下げます。「正面リセット」で無表情を記憶すると誤反応が減ります。</p>
+        </div>
+        <label class="toggle"><span>パーフェクトシンク<small>表情を52種類（iPhone の顔認識と同じ名前）で持っているモデルなら、眉・頬・口のゆがみまで細かく動かします</small></span><input type="checkbox" id="optPerfectSync" checked></label>
+        <p class="status" id="psStatus"></p>
       </section>
 
       <section class="sec">

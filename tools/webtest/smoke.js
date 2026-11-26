@@ -73,6 +73,32 @@ const cam = process.argv[2];
     const ok = await until(() => window.__mocap.sit.chair?.visible && window.__mocap.sit.amount > 0.9);
     await page.click('label:has(#optSit)'); return ok;
   });
+  // face: scores are fed every 100 ms, as the face AI would
+  const feedFace = (scores) => ev((sc) => { clearInterval(window.__f); window.__f = setInterval(() => window.__mocap.testFace(sc), 100); }, scores);
+  const stopFace = () => ev(() => clearInterval(window.__f));
+  const exprVal = (n) => ev((n) => window.__mocap.avatar.vrm.expressionManager.getValue(n), n);
+  await check('眉を寄せると怒り、目を見開いて眉を上げると驚き', async () => {
+    await feedFace({ browDownLeft: 0.8, browDownRight: 0.8 });
+    const angry = await until(() => window.__mocap.avatar.vrm.expressionManager.getValue('angry') > 0.6);
+    await feedFace({ eyeWideLeft: 0.7, eyeWideRight: 0.7, browInnerUp: 0.7, browOuterUpLeft: 0.6, browOuterUpRight: 0.6 });
+    const surprised = await until(() => { const em = window.__mocap.avatar.vrm.expressionManager; return em.getValue('surprised') > 0.6 && em.getValue('angry') < 0.1; });
+    await stopFace(); return angry && surprised;
+  });
+  await check('片目だけ閉じるとウインクになる', async () => {
+    await feedFace({ eyeBlinkLeft: 0.9, eyeBlinkRight: 0.05 });
+    const ok = await until(() => { const em = window.__mocap.avatar.vrm.expressionManager; return Math.max(em.getValue('blinkLeft'), em.getValue('blinkRight')) > 0.8 && Math.min(em.getValue('blinkLeft'), em.getValue('blinkRight')) < 0.15; });
+    await stopFace(); return ok;
+  });
+  await check('パーフェクトシンク対応モデルは52種の表情で動く', async () => {
+    // give the loaded model empty shapes under the 52 ARKit names, as a perfect-sync model would have
+    await ev(() => { const m = window.__mocap, em = m.avatar.vrm.expressionManager, C = em.getExpression('happy').constructor;
+      for (const n of m.ARKIT) if (!em.getExpression(n)) { const x = new C(n); m.avatar.vrm.scene.add(x); em.registerExpression(x); }
+      m.avatar.__ps = undefined; });
+    await feedFace({ jawOpen: 0.7, mouthSmileLeft: 0.6, browInnerUp: 0.5, cheekPuff: 0.4 });
+    const ok = await until(() => { const em = window.__mocap.avatar.vrm.expressionManager; return em.getValue('jawOpen') > 0.5 && em.getValue('cheekPuff') > 0.3 && em.getValue('aa') < 0.05; });
+    const status = await ev(() => document.getElementById('psStatus').textContent);
+    await stopFace(); return ok && /パーフェクトシンクで動かしています/.test(status);
+  });
   if (cam) {
     await check('カメラ映像から体が推定される', async () => { await page.click('#camBtn'); return until(() => performance.now() / 1000 - window.__mocap.seen.pose < 2, 120000); });
   }

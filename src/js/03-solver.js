@@ -185,6 +185,36 @@ function handNearNoseByPose() {
   return [15, 16, 19, 20].some(i => (pl[i].visibility ?? 1) > 0.5 && Math.hypot(pl[i].x - pl[0].x, pl[i].y - pl[0].y) < 0.55 * shoulder);
 }
 
+/* "Perfect sync": models that carry the 52 ARKit face shapes as their own expressions get them driven one by one.
+   Names are matched ignoring case (some models write JawOpen); the map is built once per model. */
+const ARKIT = ['browDownLeft', 'browDownRight', 'browInnerUp', 'browOuterUpLeft', 'browOuterUpRight', 'cheekPuff', 'cheekSquintLeft', 'cheekSquintRight',
+  'eyeBlinkLeft', 'eyeBlinkRight', 'eyeLookDownLeft', 'eyeLookDownRight', 'eyeLookInLeft', 'eyeLookInRight', 'eyeLookOutLeft', 'eyeLookOutRight',
+  'eyeLookUpLeft', 'eyeLookUpRight', 'eyeSquintLeft', 'eyeSquintRight', 'eyeWideLeft', 'eyeWideRight', 'jawForward', 'jawLeft', 'jawOpen', 'jawRight',
+  'mouthClose', 'mouthDimpleLeft', 'mouthDimpleRight', 'mouthFrownLeft', 'mouthFrownRight', 'mouthFunnel', 'mouthLeft', 'mouthLowerDownLeft',
+  'mouthLowerDownRight', 'mouthPressLeft', 'mouthPressRight', 'mouthPucker', 'mouthRight', 'mouthRollLower', 'mouthRollUpper', 'mouthShrugLower',
+  'mouthShrugUpper', 'mouthSmileLeft', 'mouthSmileRight', 'mouthStretchLeft', 'mouthStretchRight', 'mouthUpperUpLeft', 'mouthUpperUpRight',
+  'noseSneerLeft', 'noseSneerRight', 'tongueOut'];
+function perfectSyncMap(a = avatar) {
+  if (!a) return null;
+  if (a.__ps !== undefined) return a.__ps;
+  const own = Object.keys(a.vrm?.expressionManager?.customExpressionMap ?? {});
+  const lower = new Map(own.map(n => [n.toLowerCase(), n]));
+  const map = {};
+  for (const k of ARKIT) { const n = lower.get(k.toLowerCase()); if (n) map[k] = n; }
+  // fewer than 20 matches is a model with a few similarly named extras, not a perfect-sync model
+  a.__ps = Object.keys(map).length >= 20 ? map : null;
+  return a.__ps;
+}
+let psShown = null;
+function showPerfectSyncStatus() {
+  const m = perfectSyncMap(), el = $('#psStatus');
+  const key = (m ? Object.keys(m).length : 0) + ':' + $('#optPerfectSync').checked;
+  if (psShown === key) return; psShown = key;
+  if (!m) { el.textContent = 'このモデルは非対応です（通常の表情で動かします）'; el.className = 'status'; }
+  else if (!$('#optPerfectSync').checked) { el.textContent = `このモデルは対応しています（52種のうち ${Object.keys(m).length} 種）。今はオフです`; el.className = 'status'; }
+  else { el.textContent = `パーフェクトシンクで動かしています（52種のうち ${Object.keys(m).length} 種）`; el.className = 'status ok'; }
+}
+
 function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: false, eyes: false }) {
   const pick = [33, 263, 10, 152];
   const raw = pick.map(i => conv({ x: (lms[i].x - 0.5) * vw, y: (lms[i].y - 0.5) * vh, z: lms[i].z * vw }));
@@ -234,13 +264,48 @@ function solveFace(lms, blend, t, alpha, vw, vh, occ = { face: false, mouth: fal
   const gain = (id) => Math.pow(2, (+$(id).value - 50) / 25), mg = gain('#optMouthGain'), bg = gain('#optBlinkGain');
   for (const k of ['aa', 'ou', 'oh', 'ih', 'ee', 'happy']) target[k] = Math.min(1, target[k] * mg);
   target.blinkLeft = Math.min(1, target.blinkLeft * bg); target.blinkRight = Math.min(1, target.blinkRight * bg);
-  // link blinks slightly so a single noisy eye doesn't wink
-  const avg = (target.blinkLeft + target.blinkRight) / 2;
-  target.blinkLeft = target.blinkLeft * 0.6 + avg * 0.4;
-  target.blinkRight = target.blinkRight * 0.6 + avg * 0.4;
+  // link blinks slightly so a single noisy eye doesn't wink; a clear wink (one eye shut, the other open) is left alone
+  const wink = Math.abs(target.blinkLeft - target.blinkRight) > 0.55 && Math.min(target.blinkLeft, target.blinkRight) < 0.3;
+  if (!wink) {
+    const avg = (target.blinkLeft + target.blinkRight) / 2;
+    target.blinkLeft = target.blinkLeft * 0.6 + avg * 0.4;
+    target.blinkRight = target.blinkRight * 0.6 + avg * 0.4;
+  }
+  // angry / sad / surprised from the brows, the eyes and the corners of the mouth
+  const MOOD = ['angry', 'sad', 'surprised'];
+  if ($('#optEmotion').checked) {
+    const eg = gain('#optEmotionGain');
+    const browDown = (g('browDownLeft') + g('browDownRight')) / 2, browOuter = (g('browOuterUpLeft') + g('browOuterUpRight')) / 2;
+    const browUp = Math.max(g('browInnerUp'), browOuter), wide = (g('eyeWideLeft') + g('eyeWideRight')) / 2;
+    const frown = (g('mouthFrownLeft') + g('mouthFrownRight')) / 2, sneer = (g('noseSneerLeft') + g('noseSneerRight')) / 2;
+    const surprised = ramp((wide * 0.5 + browUp * 0.5) * eg, 0.22, 0.55);
+    // a smile narrows the eyes, and the face AI then also reports the brows as lowered: take the squint off and let the smile win
+    const squint = (g('eyeSquintLeft') + g('eyeSquintRight')) / 2;
+    const angry = ramp((browDown - squint * 0.8 + sneer * 0.3) * eg, 0.3, 0.65) * (1 - target.happy);
+    const sad = ramp((g('browInnerUp') * 0.6 + frown * 0.7 - browOuter * 0.4) * eg, 0.2, 0.5) * (1 - surprised) * (1 - target.happy);
+    Object.assign(target, { angry: angry * 0.85, sad: sad * 0.8, surprised: surprised * 0.85 });
+  } else for (const k of MOOD) target[k] = 0;
+  // perfect sync: the model's own 52 shapes take over the eyes and mouth (the basic shapes would deform the face twice)
+  const ps = $('#optPerfectSync').checked ? perfectSyncMap() : null;
+  if (ps) {
+    for (const k in ps) {
+      if (k.startsWith('eyeLook')) continue; // the eyes keep turning by the look-at below (both would move them twice)
+      const side = k.match(/(Left|Right)$/)?.[1];
+      // the avatar's left takes your left (or your right in mirror mode), like the blinks above
+      let v = side ? subj(side.toLowerCase(), k.slice(0, -side.length)) : g(k);
+      if (/^(mouth|jaw|cheek|tongue)/.test(k)) v = Math.min(1, v * mg);
+      else if (/^eye(Blink|Squint)/.test(k)) v = Math.min(1, v * bg);
+      target[ps[k]] = v;
+    }
+    if (wink) { target[ps.eyeBlinkLeft] = target.blinkLeft; target[ps.eyeBlinkRight] = target.blinkRight; }
+    for (const k of ['aa', 'ou', 'oh', 'ih', 'ee', 'blinkLeft', 'blinkRight', 'happy', ...MOOD]) target[k] = 0;
+  }
+  showPerfectSyncStatus();
   // hand near the mouth: keep the mouth as it was (otherwise a hand touching the chin "talks")
-  if (occ.mouth || occ.face) for (const k of ['aa', 'ou', 'oh', 'ih', 'ee', 'happy']) delete target[k];
-  if (occ.eyes) { delete target.blinkLeft; delete target.blinkRight; }
+  const MOUTH = ['aa', 'ou', 'oh', 'ih', 'ee', 'happy'];
+  if (ps) for (const k in ps) if (/^(mouth|jaw|cheek|tongue)/.test(k)) MOUTH.push(ps[k]);
+  if (occ.mouth || occ.face) for (const k of MOUTH) delete target[k];
+  if (occ.eyes) { delete target.blinkLeft; delete target.blinkRight; if (ps) for (const k in ps) if (/^eye/.test(k)) delete target[ps[k]]; }
   for (const k in target) exprState[k] = (exprState[k] ?? 0) + (target[k] - (exprState[k] ?? 0)) * 0.55;
   avatar.expr(exprState);
   if (occ.eyes || occ.face) return;

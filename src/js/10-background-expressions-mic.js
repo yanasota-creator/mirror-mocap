@@ -95,7 +95,9 @@ function setPreset(k) {
 // expressions the model's author added (e.g. ">_<"), as extra buttons
 function renderCustomExpr() {
   const box = $('#customExpr'); box.textContent = '';
-  const names = Object.keys(avatar?.vrm?.expressionManager?.customExpressionMap ?? {});
+  // the 52 perfect-sync shapes are parts of a face, not expressions: leave them out of the buttons
+  const parts = new Set(Object.values(perfectSyncMap() ?? {}));
+  const names = Object.keys(avatar?.vrm?.expressionManager?.customExpressionMap ?? {}).filter(n => !parts.has(n));
   $('#customExprWrap').hidden = !names.length;
   for (const n of names.slice(0, 24)) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.dataset.expr = n; b.textContent = n; b.title = n;
@@ -135,6 +137,8 @@ $('#optMic').onchange = () => setMic($('#optMic').checked);
 $('#optMicGain').oninput = () => { $('#micGainOut').textContent = $('#optMicGain').value; };
 $('#optMouthGain').oninput = () => { $('#mouthGainOut').textContent = $('#optMouthGain').value; };
 $('#optBlinkGain').oninput = () => { $('#blinkGainOut').textContent = $('#optBlinkGain').value; };
+$('#optEmotionGain').oninput = () => { $('#emotionGainOut').textContent = $('#optEmotionGain').value; };
+$('#optPerfectSync').onchange = () => { psShown = null; for (const k in exprState) exprState[k] = 0; showPerfectSyncStatus(); };
 function micMouth(dt) {
   if (!mic.an) return null;
   mic.an.getFloatTimeDomainData(mic.buf);

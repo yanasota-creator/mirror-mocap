@@ -145,6 +145,7 @@ function setAvatar(a) {
   a.root.updateMatrixWorld(true);
   a.init?.();
   applyJiggle();
+  psShown = null; showPerfectSyncStatus();
   const pos = {}, q0 = {};
   for (const n of ALL_BONES) {
     const b = a.bone(n);

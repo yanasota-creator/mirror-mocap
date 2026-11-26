@@ -250,7 +250,7 @@ $('#optQuality').onchange = async () => {
 
 /* ---------------- Remembered settings (this browser only) ---------------- */
 const SETTINGS_KEY = 'mirror-mocap-settings';
-const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol'];
+const SAVED_IDS = ['optQuality', 'optBody', 'optFace', 'optHands', 'optLegs', 'optMirror', 'optSmooth', 'optJiggle', 'optPreview', 'optPreviewLock', 'optBg', 'optMicGain', 'optGravity', 'optBridge', 'optLight', 'optAutoEyes', 'accEars', 'accCrown', 'accGlasses', 'accHalo', 'optGesture', 'optFx', 'optSway', 'motionFormat', 'optBubble', 'optChatVrc', 'optMove', 'optSaveVrm', 'optCalibDelay', 'recFormat', 'optRecDelay', 'optWeather', 'optFollow', 'optVmcIn', 'optClap', 'optShotAlpha', 'vrcParam', 'optJump', 'optSit', 'optChair', 'optDesk', 'optLaser', 'optGood', 'optIdleSway', 'optMouseGaze', 'optPoke', 'optSfx', 'optNeutral', 'optMouthGain', 'optBlinkGain', 'optBgmVol', 'optEmotion', 'optEmotionGain', 'optPerfectSync'];
 function loadSettings() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
@@ -269,7 +269,7 @@ function loadSettings() {
   applyPreview();
   if ($('#optBg').value === 'image') $('#optBg').value = 'studio'; // the image itself is not stored
   $('#micGainOut').textContent = $('#optMicGain').value;
-  $('#mouthGainOut').textContent = $('#optMouthGain').value; $('#blinkGainOut').textContent = $('#optBlinkGain').value; $('#bgmVolOut').textContent = $('#optBgmVol').value;
+  $('#mouthGainOut').textContent = $('#optMouthGain').value; $('#blinkGainOut').textContent = $('#optBlinkGain').value; $('#bgmVolOut').textContent = $('#optBgmVol').value; $('#emotionGainOut').textContent = $('#optEmotionGain').value;
   applyBackground();
   applyLight();
   setTimeout(applyWeather, 0);
