@@ -25,6 +25,7 @@ class MocapPacket
     public float[] bs;    // blinkL, blinkR, jawOpen, pucker, funnel, smile, lookLeft, lookUp
     public int[] occ;     // hand over face, hand near mouth, hand near eyes
     public float[] sh;    // shoulder centre x, y and shoulder width in image pixels (for moving the whole body)
+    public float[] mood;  // browDown, browInnerUp, browOuterUp, eyeWide, mouthFrown, noseSneer, eyeSquint (averages of both sides)
 }
 
 [DefaultExecutionOrder(-50)] // pose bones before UniVRM runs spring bones / expressions in LateUpdate
@@ -39,6 +40,8 @@ public class MirrorMocapReceiver : MonoBehaviour
     [Range(0, 1), Tooltip("上げるとブレが減り、少し遅れる")] public float smoothing = 0.45f;
     [Range(0, 1), Tooltip("上げると動きが行き過ぎて戻る（ぷるぷる）")] public float jiggle = 0.55f;
     [Tooltip("目の向き（視線）を動かす")] public bool trackGaze = true;
+    [Tooltip("眉と目から怒り・悲しみ・驚きを再現する（Web版と同じ計算）")] public bool emotions = true;
+    [Range(0, 1), Tooltip("怒り・悲しみ・驚きの感度。考えごとをしているだけで怒り顔になるときは下げる")] public float emotionGain = 0.5f;
     [Tooltip("左右に動く・しゃがむとアバターも移動する（正面リセットの位置が基準）")] public bool moveBody = false;
 
     [Header("Scene")]
@@ -61,7 +64,7 @@ public class MirrorMocapReceiver : MonoBehaviour
     Quaternion lastTorso = Quaternion.identity, lastHips = Quaternion.identity, lastHead = Quaternion.identity;
     bool haveTorso, haveHead;
     float seenPose = -99, seenFace = -99, faceHeld = -99, seenHandL = -99, seenHandR = -99;
-    readonly float[] expr = new float[6]; // blinkL, blinkR, aa, ou, oh, happy (avatar sides)
+    readonly float[] expr = new float[9]; // blinkL, blinkR, aa, ou, oh, happy (avatar sides), angry, sad, surprised
     float gazeYaw, gazePitch; // degrees, UniVRM convention: +yaw = avatar's right, +pitch = up
     // expression presets on keys 1-5 (happy, angry, sad, surprised, relaxed), 0 = off
     int activePreset = -1;
@@ -268,9 +271,9 @@ public class MirrorMocapReceiver : MonoBehaviour
             e.SetWeight(ExpressionKey.Ou, expr[3]);
             e.SetWeight(ExpressionKey.Oh, expr[4]);
             e.SetWeight(ExpressionKey.Happy, Mathf.Max(expr[5], presetW[0]));
-            e.SetWeight(ExpressionKey.Angry, presetW[1]);
-            e.SetWeight(ExpressionKey.Sad, presetW[2]);
-            e.SetWeight(ExpressionKey.Surprised, presetW[3]);
+            e.SetWeight(ExpressionKey.Angry, Mathf.Max(expr[6], presetW[1]));
+            e.SetWeight(ExpressionKey.Sad, Mathf.Max(expr[7], presetW[2]));
+            e.SetWeight(ExpressionKey.Surprised, Mathf.Max(expr[8], presetW[3]));
             e.SetWeight(ExpressionKey.Relaxed, presetW[4]);
             vrm.Runtime.LookAt.SetYawPitchManually(trackGaze ? gazeYaw : 0f, trackGaze ? gazePitch : 0f);
         }
@@ -415,8 +418,24 @@ public class MirrorMocapReceiver : MonoBehaviour
                 float bl = Ramp(SubjectLeft(true) ? p.bs[0] : p.bs[1], 0.25f, 0.65f);
                 float br = Ramp(SubjectLeft(false) ? p.bs[0] : p.bs[1], 0.25f, 0.65f);
                 float avg = (bl + br) * 0.5f;
-                float[] t = { bl * 0.6f + avg * 0.4f, br * 0.6f + avg * 0.4f, Ramp(p.bs[2], 0.06f, 0.55f), Ramp(p.bs[3], 0.25f, 0.85f) * 0.8f, Ramp(p.bs[4], 0.15f, 0.6f) * 0.7f, Ramp(p.bs[5], 0.25f, 0.75f) };
-                for (int i = 0; i < 6; i++)
+                // blinks are linked a little so one noisy eye doesn't wink; a clear wink (one shut, one open) is left alone
+                bool wink = Mathf.Abs(bl - br) > 0.55f && Mathf.Min(bl, br) < 0.3f;
+                float link = wink ? 0f : 0.4f;
+                float happy = Ramp(p.bs[5], 0.25f, 0.75f);
+                float[] t = { bl * (1 - link) + avg * link, br * (1 - link) + avg * link, Ramp(p.bs[2], 0.06f, 0.55f), Ramp(p.bs[3], 0.25f, 0.85f) * 0.8f, Ramp(p.bs[4], 0.15f, 0.6f) * 0.7f, happy, 0, 0, 0 };
+                if (emotions && p.mood != null && p.mood.Length >= 7)
+                {
+                    // the same formula as the web version; a smile narrows the eyes and also reads as lowered brows,
+                    // so the squint is taken off and a smile cancels anger
+                    float eg = Mathf.Pow(2f, (emotionGain - 0.5f) * 4f);
+                    float browDown = p.mood[0], inner = p.mood[1], outer = p.mood[2], wide = p.mood[3], frown = p.mood[4], sneer = p.mood[5], squint = p.mood[6];
+                    float browUp = Mathf.Max(inner, outer);
+                    float surprised = Ramp((wide * 0.5f + browUp * 0.5f) * eg, 0.22f, 0.55f);
+                    float angry = Ramp((browDown - squint * 0.8f + sneer * 0.3f) * eg, 0.3f, 0.65f) * (1 - happy);
+                    float sad = Ramp((inner * 0.6f + frown * 0.7f - outer * 0.4f) * eg, 0.2f, 0.5f) * (1 - surprised) * (1 - happy);
+                    t[6] = angry * 0.85f; t[7] = sad * 0.8f; t[8] = surprised * 0.85f;
+                }
+                for (int i = 0; i < t.Length; i++)
                 {
                     bool hold = (i < 2 && occEyes) || (i >= 2 && (occMouth || occFace));
                     if (!hold) expr[i] += (t[i] - expr[i]) * 0.55f;

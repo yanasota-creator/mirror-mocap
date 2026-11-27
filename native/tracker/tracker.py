@@ -109,6 +109,10 @@ def build_packet(latest: Latest, w: int, h: int) -> dict:
         pkt["bs"] = [round(x, 3) for x in (g("eyeBlinkLeft"), g("eyeBlinkRight"), g("jawOpen"), g("mouthPucker"),
                                            g("mouthFunnel"), (g("mouthSmileLeft") + g("mouthSmileRight")) / 2,
                                            look_left, look_up)]
+        # brows, eyes and mouth corners, for angry / sad / surprised (same inputs as the web version)
+        avg2 = lambda n: (g(n + "Left") + g(n + "Right")) / 2
+        pkt["mood"] = [round(x, 3) for x in (avg2("browDown"), g("browInnerUp"), avg2("browOuterUp"), avg2("eyeWide"),
+                                             avg2("mouthFrown"), avg2("noseSneer"), avg2("eyeSquint"))]
         # is a hand in front of the face / near the mouth / near the eyes?
         xs = [p.x for p in f[::6]]; ys = [p.y for p in f[::6]]
         x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)

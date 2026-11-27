@@ -155,7 +155,7 @@ tools/                     開発用（build.py, test_all.py, test_bridge.py, we
 | bridge.py → VRChat | UDP 9000 | `/tracking/trackers/1〜8/position・rotation`、`head`、`/chatbox/input`、`/avatar/parameters/<名前>`、`/input/Jump` |
 | VMC送信アプリ → bridge.py → Web版 | UDP 39542（`--vmc-in-lan` で LAN からも）→ WebSocket | `{type:'vmc', bones, blend}` |
 | bridge.py → OBSビューア | WebSocket | 送る側の `frame` をそのまま中継 |
-| tracker.py → Unity | UDP 39540 | `pose` `vis` `hl` `hr` `face` `bs` `occ` `sh`（肩の中心と肩幅のピクセル値） |
+| tracker.py → Unity | UDP 39540 | `pose` `vis` `hl` `hr` `face` `bs` `occ` `sh`（肩の中心と肩幅のピクセル値）、`mood`（4回目で追加：眉の下がり・眉頭の上がり・眉尻の上がり・目の見開き・口角の下がり・鼻のしわ・目の細め。Unity が Web版と同じ式で喜怒哀驚にする。無い古いトラッカーでも動く） |
 
 - bridge.py は **Origin（接続元のページ）を許可リストで確認**します（公開Web版・localhost・127.0.0.1）。ほかのサイトからは 403 で拒否
 - **file:// のページ（Origin が `null`）は接続コードが必要**（4回目で変更）。`null` は、どのサイトでも sandbox 付きの iframe で作れるので、以前は他のサイトから VRChat のチャット書き込みや姿勢の盗み見ができた。コードは `native/bridge/bridge-code.txt`（git には入れない）。5回間違えると1分止める
