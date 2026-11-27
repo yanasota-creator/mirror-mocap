@@ -12,6 +12,7 @@
    and the Unity receiver compiles against small stand-ins for Unity / UniVRM  (tools/unity-stubs/check.sh, needs mcs)
 4. the web page in a real browser                                            (tools/webtest/smoke.js)
 5. accessibility, with --a11y                                                (tools/webtest/a11y.js)
+6. the PC tracker on the --cam video, if mediapipe is installed              (tools/test_tracker.py)
 """
 import re
 import shutil
@@ -78,6 +79,9 @@ def main():
             results['4. Web版（ブラウザ）'] = run('4. Web版（ブラウザ）', cmd, cwd=web, timeout=1200)
             if '--a11y' in args:
                 results['5. 使いやすさ（axe）'] = run('5. 使いやすさ（axe）', ['node', 'a11y.js'], cwd=web, timeout=1800)
+    if '--cam' in args:
+        has_mp = subprocess.run([PY, '-c', 'import mediapipe, cv2'], capture_output=True).returncode == 0
+        results['6. PC版トラッカー'] = run('6. PC版トラッカー', [PY, 'tools/test_tracker.py', str(Path(args[args.index('--cam') + 1]).resolve())], timeout=600) if has_mp else None
     print()
     for k, v in results.items():
         print({True: '○', False: '×', None: '－'}[v], k, '' if v is not None else '（実行できなかったので省略）')

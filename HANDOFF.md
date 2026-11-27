@@ -202,6 +202,7 @@ tools/                     開発用（build.py, test_all.py, test_bridge.py, we
   - Playwright の `waitForFunction` に async 関数を渡すと、Promise が「真」と判定されて待ちません
   - 折りたたまれている欄の中の要素はクリックできません。テストでは `.sec.closed` を外してから操作します
   - チェックボックスをクリックした直後は、キー入力が入力欄に向いていて、ページのキー操作が無視されます。先に3D画面をクリックします
+- **PC版トラッカーの自動テスト**：`tools/test_tracker.py 動画`（`test_all.py --cam` でも流れる。GitHub では毎回）。送る内容の数と、NaN がないことを確かめる
 - **PC版トラッカーのテスト**：Linux では `libegl1 libgles2 libgl1` が必要です。`python tracker.py --video test.mp4 --frames 40 --print` で、カメラなしでも試せます
 - **Unity のコンパイル確認**：`tools/unity-stubs/check.sh`。UniVRM の API を新しく使うときは、`Stubs.cs` にも足します（UniVRM の実際のソースで名前を確かめること）
 
