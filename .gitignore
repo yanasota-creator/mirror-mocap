@@ -5,3 +5,5 @@ __pycache__/
 node_modules/
 native/bridge/bridge-code.txt
 tools/webtest/page.lint.mjs
+portrait.jpg
+cam.y4m

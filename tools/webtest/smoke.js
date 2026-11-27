@@ -10,6 +10,8 @@ const cam = process.argv[2];
 
 (async () => {
   const { browser, page, BASE, ev, until } = await open({ cam });
+  const requests = {}; // file name -> how many times it was fetched (AI files should come once)
+  page.context().on('request', r => { const k = r.url().split('?')[0].split('/').pop(); requests[k] = (requests[k] || 0) + 1; });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   // console errors count, except blocked fonts and MediaPipe's INFO line (it is logged as an error)
@@ -143,6 +145,16 @@ const cam = process.argv[2];
   });
   if (cam) {
     await check('カメラ映像から体が推定される', async () => { await page.click('#camBtn'); return until(() => performance.now() / 1000 - window.__mocap.seen.pose < 2, 120000); });
+    await check('AIのファイルは1回ずつだけダウンロードされる（3つのAIで共有）', async () =>
+      ['vision_bundle.mjs', 'vision_wasm_internal.wasm', 'face_landmarker.task', 'hand_landmarker.task'].every(k => requests[k] === 1));
+    await check('処理モードを切り替えても体の推定が続く', async () => {
+      await page.selectOption('#optQuality', 'light');
+      const switched = await until(() => document.getElementById('loadNote').textContent === '' , 120000);
+      await page.waitForTimeout(2000);
+      const ok = switched && await until(() => performance.now() / 1000 - window.__mocap.seen.pose < 2, 120000) && requests['pose_landmarker_lite.task'] === 1;
+      await page.selectOption('#optQuality', 'standard');
+      return ok;
+    });
   }
   await check('ページのエラーがない', async () => errors.length === 0);
 

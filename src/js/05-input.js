@@ -6,6 +6,10 @@ async function ensureEngine() {
   try { await loadEngine(); return true; }
   catch (e) {
     console.error(e); note('');
+    if (/fingerprint/.test(e?.message)) {
+      toast('安全のため、AIの読み込みを止めました', '届いたAIのファイルが、公開されているものと一致しませんでした（途中で書き換えられた可能性があります）。時間をおいてから、もう一度押してください。続くときは、別のネットワークで試してください。');
+      return false;
+    }
     toast('AIモデルを読み込めませんでした', 'モデルはインターネットから取得します。接続を確認してから、もう一度押してください。社内ネットワークなどでCDNが遮断されている場合も起こります。');
     return false;
   }

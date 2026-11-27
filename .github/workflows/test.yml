@@ -28,7 +28,12 @@ jobs:
           npm ci
           npm install --no-save playwright@1.63.0
           npx playwright install --with-deps chromium
+      - name: A fake camera video from MediaPipe's sample photo (so the AI is tested too)
+        run: |
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          curl -sfL -o portrait.jpg https://storage.googleapis.com/mediapipe-assets/portrait.jpg
+          ffmpeg -loglevel error -loop 1 -i portrait.jpg -vf "scale=-2:720,pad=1280:720:(ow-iw)/2:0,format=yuv420p" -t 2 -r 15 cam.y4m
       - name: Run all checks
-        run: python tools/test_all.py --a11y
+        run: python tools/test_all.py --a11y --cam cam.y4m
       - name: The libraries on jsDelivr match the fingerprints in the page
         run: python tools/build.py --check-cdn
