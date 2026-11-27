@@ -114,6 +114,12 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 
 .panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding-block: 8px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; align-content: start; gap: 4px; }
 .sec { padding-block: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.scene-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.scene-new input { min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
+.scene-list { display: grid; gap: 6px; }
+.scene { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 4px; }
+.scene .btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-del { color: var(--muted); padding-inline: 0; }
 /* tabs and search stay on top while the panel scrolls */
 .panel-nav { position: sticky; top: -8px; z-index: 2; background: var(--panel); margin-top: -8px; padding: 10px 0 8px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
 .panel-nav input[type=search] { width: 100%; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <!-- What this page may load and talk to. Even if something slipped a script in, it could not send data anywhere else.
      tools/build.py fills in the fingerprints of the scripts written in this page (script-src). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-tzh7ryX+RjukpTFidIaDUILEPFYE/jUL84Htwa7se/k=' 'sha256-N8NweE2ODZlAPqG0t0bTC7Pf9sqAZwGmaqNBb08CJd0=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net blob: 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-tzh7ryX+RjukpTFidIaDUILEPFYE/jUL84Htwa7se/k=' 'sha256-dkxiO7upura4gATv+qlcWLhc6lk24mXr1QVecNc3WhY=' 'sha256-gl2Z/Yc86wxnD2c29z/WX7ATFPiwDXPzCt2LvLd1Ieo=' https://cdn.jsdelivr.net blob: 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data: https://raw.githubusercontent.com https://cdn.jsdelivr.net; media-src blob: mediastream:; connect-src https://cdn.jsdelivr.net https://storage.googleapis.com https://raw.githubusercontent.com ws://127.0.0.1:39541 blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Mirror Mocap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -128,6 +128,12 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 
 .panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding-block: 8px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; align-content: start; gap: 4px; }
 .sec { padding-block: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.scene-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.scene-new input { min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
+.scene-list { display: grid; gap: 6px; }
+.scene { display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 4px; }
+.scene .btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-del { color: var(--muted); padding-inline: 0; }
 /* tabs and search stay on top while the panel scrolls */
 .panel-nav { position: sticky; top: -8px; z-index: 2; background: var(--panel); margin-top: -8px; padding: 10px 0 8px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
 .panel-nav input[type=search] { width: 100%; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
@@ -433,6 +439,16 @@ body.stream .stage { height: 100%; min-height: 0; }
           <button type="button" class="btn sm" id="resetSettings">初期化</button>
         </div>
         <p class="hint">「設定を保存」でファイルに書き出し、別のPCやブラウザで「設定を読込」すると同じ設定になります。</p>
+      </section>
+      <section class="sec" data-cat="basic stream">
+        <h2>シーン</h2>
+        <p class="hint">今の設定の組み合わせ（背景・表情・小物・カメラ映像のロックなど）に名前を付けて保存し、ワンタッチで切り替えます。「配信用」「練習用」など。</p>
+        <div class="scene-new">
+          <input type="text" id="sceneName" placeholder="シーンの名前（例：配信用）" aria-label="シーンの名前" maxlength="20" autocomplete="off">
+          <button type="button" class="btn sm" id="sceneSave">今の設定を保存</button>
+        </div>
+        <div class="scene-list" id="sceneList"></div>
+        <p class="hint" id="sceneEmpty">まだシーンはありません。</p>
       </section>
       <section class="sec" data-cat="basic">
         <h2>処理モード</h2>
@@ -2767,7 +2783,9 @@ $('#exportSettings').onclick = () => {
   saveSettings();
   let data = {}; try { data = JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? {}; } catch {}
   if (String(data.model).startsWith('own:')) delete data.model; // your own VRM lives only in this browser
-  const url = URL.createObjectURL(new Blob([JSON.stringify({ app: 'mirror-mocap', version: 1, settings: data }, null, 2)], { type: 'application/json' }));
+  // scenes go along; your own VRM lives only in this browser, so it is left out of them too
+  const sc = scenes.map(x => ({ name: x.name, settings: Object.fromEntries(Object.entries(x.settings).filter(([k, v]) => !(k === 'model' && String(v).startsWith('own:')))) }));
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ app: 'mirror-mocap', version: 1, settings: data, scenes: sc }, null, 2)], { type: 'application/json' }));
   download(url, `mirror-mocap-settings-${stamp()}.json`); setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
 $('#importSettings').onchange = async (e) => {
@@ -2779,6 +2797,10 @@ $('#importSettings').onchange = async (e) => {
     for (const id of SAVED_IDS) if (id in j.settings && ['string', 'boolean', 'number'].includes(typeof j.settings[id])) clean[id] = j.settings[id];
     if (typeof j.settings.model === 'string' && MODELS.some(m => m.id === j.settings.model)) clean.model = j.settings.model;
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(clean));
+    if (Array.isArray(j.scenes)) {
+      const sc = j.scenes.filter(validScene).slice(0, SCENES_MAX).map(x => ({ name: String(x.name).trim().slice(0, 20), settings: cleanSceneSettings(x.settings) }));
+      localStorage.setItem(SCENES_KEY, JSON.stringify(sc));
+    }
     location.reload();
   } catch { toast('設定ファイルを読み込めませんでした', 'このページの「設定を保存」で書き出したファイル（.json）を選んでください。'); }
 };
@@ -3890,6 +3912,89 @@ addEventListener('keydown', (e) => {
   e.preventDefault(); $('#setSearch').focus(); $('#setSearch').select();
 });
 applyPanelNav();
+/* ================================================================
+   Scenes: named sets of settings (e.g. 配信用 / 練習用), switched with one click
+   ================================================================ */
+const SCENES_KEY = 'mirror-mocap-scenes', SCENES_MAX = 12;
+let scenes = [];
+try { const v = JSON.parse(localStorage.getItem(SCENES_KEY)); if (Array.isArray(v)) scenes = v.filter(validScene).slice(0, SCENES_MAX); } catch {}
+
+function validScene(s) { return s && typeof s.name === 'string' && s.name.trim() && s.settings && typeof s.settings === 'object'; }
+// only known settings with plain values (also for scenes that come from a settings file)
+function cleanSceneSettings(src) {
+  const out = {};
+  for (const id of SAVED_IDS) if (id in src && ['string', 'boolean', 'number'].includes(typeof src[id])) out[id] = src[id];
+  if (typeof src.model === 'string' && (MODELS.some(m => m.id === src.model) || src.model.startsWith('own:'))) out.model = src.model;
+  return out;
+}
+function currentSettings() {
+  const s = { model: currentModelId };
+  for (const id of SAVED_IDS) { const el = document.getElementById(id); s[id] = el.type === 'checkbox' ? el.checked : el.value; }
+  if (s.optBg === 'image' || s.optBg === 'video') s.optBg = 'studio'; // the picture itself is not kept
+  return s;
+}
+function storeScenes() { try { localStorage.setItem(SCENES_KEY, JSON.stringify(scenes)); } catch {} }
+
+function renderScenes() {
+  const box = $('#sceneList'); box.textContent = '';
+  $('#sceneEmpty').hidden = scenes.length > 0;
+  for (const sc of scenes) {
+    const row = document.createElement('div'); row.className = 'scene';
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'btn sm'; go.textContent = sc.name;
+    go.title = `「${sc.name}」の設定にする`; go.onclick = () => applyScene(sc);
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'btn sm scene-del'; del.textContent = '×';
+    del.setAttribute('aria-label', `シーン「${sc.name}」を削除`);
+    del.onclick = () => {
+      if (!confirm(`シーン「${sc.name}」を削除しますか？`)) return;
+      scenes = scenes.filter(x => x !== sc); storeScenes(); renderScenes();
+    };
+    row.append(go, del); box.append(row);
+  }
+}
+
+function saveScene() {
+  const name = $('#sceneName').value.trim().slice(0, 20);
+  if (!name) { $('#sceneName').focus(); toast('シーンの名前を入れてください', '例：配信用、練習用、VRChat', 'info'); return; }
+  const old = scenes.find(s => s.name === name);
+  if (old && !confirm(`シーン「${name}」を今の設定で上書きしますか？`)) return;
+  if (!old && scenes.length >= SCENES_MAX) { toast('シーンがいっぱいです', `保存できるのは ${SCENES_MAX} 個までです。使わないものを × で消してください。`, 'info'); return; }
+  const entry = { name, settings: currentSettings() };
+  if (old) scenes[scenes.indexOf(old)] = entry; else scenes.push(entry);
+  storeScenes(); renderScenes();
+  $('#sceneName').value = '';
+  toast(`シーン「${name}」を保存しました`, '下のボタンを押すと、いつでもこの設定に戻せます。', 'info');
+  setTimeout(() => { $('#toast').hidden = true; }, 2500);
+}
+
+// set each control and run what changing it by hand would run (background, bridge, accessories ...)
+function applyScene(sc) {
+  const s = cleanSceneSettings(sc.settings);
+  const order = [...SAVED_IDS];
+  // unlocking the camera preview asks first, as always; it has to happen before the preview itself can be switched on
+  order.splice(order.indexOf('optPreviewLock'), 1); order.unshift('optPreviewLock');
+  for (const id of order) {
+    if (!(id in s)) continue;
+    const el = document.getElementById(id);
+    const now = el.type === 'checkbox' ? el.checked : el.value;
+    if (now === s[id] || String(now) === String(s[id])) continue;
+    if (el.type === 'checkbox') el.checked = !!s[id];
+    else if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === String(s[id]))) continue; // a value this version doesn't have
+    else el.value = s[id];
+    if (el.type === 'range') el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (s.model && s.model !== currentModelId) {
+    if (s.model.startsWith('own:')) ownList().then(list => { const v = list.find(x => 'own:' + x.id === s.model); if (v) loadOwn(v); });
+    else { const m = MODELS.find(x => x.id === s.model); if (m) loadModel(m); }
+  }
+  saveSettings();
+  toast(`シーン「${sc.name}」にしました`, '', 'info');
+  setTimeout(() => { $('#toast').hidden = true; }, 1800);
+}
+
+$('#sceneSave').onclick = saveScene;
+$('#sceneName').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveScene(); } });
+renderScenes();
 /* ---------------- Boot ---------------- */
 const savedModel = loadSettings();
 applyRenderQuality();

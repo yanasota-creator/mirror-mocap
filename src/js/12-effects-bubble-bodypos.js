@@ -287,7 +287,9 @@ $('#exportSettings').onclick = () => {
   saveSettings();
   let data = {}; try { data = JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? {}; } catch {}
   if (String(data.model).startsWith('own:')) delete data.model; // your own VRM lives only in this browser
-  const url = URL.createObjectURL(new Blob([JSON.stringify({ app: 'mirror-mocap', version: 1, settings: data }, null, 2)], { type: 'application/json' }));
+  // scenes go along; your own VRM lives only in this browser, so it is left out of them too
+  const sc = scenes.map(x => ({ name: x.name, settings: Object.fromEntries(Object.entries(x.settings).filter(([k, v]) => !(k === 'model' && String(v).startsWith('own:')))) }));
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ app: 'mirror-mocap', version: 1, settings: data, scenes: sc }, null, 2)], { type: 'application/json' }));
   download(url, `mirror-mocap-settings-${stamp()}.json`); setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
 $('#importSettings').onchange = async (e) => {
@@ -299,6 +301,10 @@ $('#importSettings').onchange = async (e) => {
     for (const id of SAVED_IDS) if (id in j.settings && ['string', 'boolean', 'number'].includes(typeof j.settings[id])) clean[id] = j.settings[id];
     if (typeof j.settings.model === 'string' && MODELS.some(m => m.id === j.settings.model)) clean.model = j.settings.model;
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(clean));
+    if (Array.isArray(j.scenes)) {
+      const sc = j.scenes.filter(validScene).slice(0, SCENES_MAX).map(x => ({ name: String(x.name).trim().slice(0, 20), settings: cleanSceneSettings(x.settings) }));
+      localStorage.setItem(SCENES_KEY, JSON.stringify(sc));
+    }
     location.reload();
   } catch { toast('設定ファイルを読み込めませんでした', 'このページの「設定を保存」で書き出したファイル（.json）を選んでください。'); }
 };

@@ -209,6 +209,16 @@
         </div>
         <p class="hint">「設定を保存」でファイルに書き出し、別のPCやブラウザで「設定を読込」すると同じ設定になります。</p>
       </section>
+      <section class="sec" data-cat="basic stream">
+        <h2>シーン</h2>
+        <p class="hint">今の設定の組み合わせ（背景・表情・小物・カメラ映像のロックなど）に名前を付けて保存し、ワンタッチで切り替えます。「配信用」「練習用」など。</p>
+        <div class="scene-new">
+          <input type="text" id="sceneName" placeholder="シーンの名前（例：配信用）" aria-label="シーンの名前" maxlength="20" autocomplete="off">
+          <button type="button" class="btn sm" id="sceneSave">今の設定を保存</button>
+        </div>
+        <div class="scene-list" id="sceneList"></div>
+        <p class="hint" id="sceneEmpty">まだシーンはありません。</p>
+      </section>
       <section class="sec" data-cat="basic">
         <h2>処理モード</h2>
         <select id="optQuality" aria-label="処理モード">
@@ -409,6 +419,7 @@
 <!-- @include js/15-export-bridge-recording.js -->
 <!-- @include js/16-face-extras.js -->
 <!-- @include js/17-panel-nav.js -->
+<!-- @include js/18-scenes.js -->
 <!-- @include js/99-boot.js -->
 </script>
 <!-- If the libraries can't be loaded (offline, or cdn.jsdelivr.net blocked), the page would just sit there: say why instead -->

@@ -85,6 +85,7 @@ const cam = process.argv[2];
     const kept = await exprVal('aa') > 0.6 && await ev(() => window.__mocap.exprLocked);
     await page.keyboard.press('h');
     const back = await until(() => window.__mocap.avatar.vrm.expressionManager.getValue('aa') < 0.1);
+    if (!(open && kept && back)) console.log('lock debug:', open, kept, back, await exprVal('aa'), await ev(() => window.__mocap.exprLocked), await ev(() => document.activeElement?.tagName + '#' + document.activeElement?.id));
     await stopFace(); return open && kept && back;
   });
   await check('頬染め：自動では頭を撫でると、「いつも」では常に出る', async () => {
@@ -142,6 +143,29 @@ const cam = process.argv[2];
     const back = await visible('recBtn') && await visible('optMouthGain');
     await page.mouse.click(30, 700);
     return tab && search && none && back;
+  });
+  await check('シーン：保存して呼び出すと設定が戻る。ロックを外すシーンでも、確認を断ればロックのまま', async () => {
+    const val = (id) => ev((id) => { const e = document.getElementById(id); return e.type === 'checkbox' ? e.checked : e.value; }, id);
+    // scene A: green background, light, effects off, preview unlocked
+    await page.selectOption('#optBg', 'green'); await page.selectOption('#optLight', 'neon');
+    await page.fill('#sceneName', '配信用'); await page.click('#sceneSave');
+    // now something else, and the preview locked
+    await page.selectOption('#optBg', 'studio'); await page.selectOption('#optLight', 'studio');
+    await page.click('label:has(#optPreviewLock)');
+    const locked = await val('optPreviewLock');
+    page.once('dialog', d => d.dismiss()); // "unlock?" -> no
+    await page.click('#sceneList .scene .btn >> nth=0');
+    await page.waitForTimeout(500);
+    const back = await val('optBg') === 'green' && await val('optLight') === 'neon';
+    const stillLocked = await val('optPreviewLock') === true && await val('optPreview') === false;
+    const saved = await ev(() => JSON.parse(localStorage.getItem('mirror-mocap-scenes')).length === 1);
+    // tidy up: unlock (yes), delete the scene (yes), studio background
+    page.once('dialog', d => d.accept()); await page.click('label:has(#optPreviewLock)');
+    page.once('dialog', d => d.accept()); await page.click('#sceneList .scene-del');
+    await page.selectOption('#optBg', 'studio'); await page.selectOption('#optLight', 'studio');
+    const gone = await ev(() => document.querySelectorAll('#sceneList .scene').length === 0);
+    await page.mouse.click(30, 700);
+    return locked && back && stillLocked && saved && gone;
   });
   if (cam) {
     await check('カメラ映像から体が推定される', async () => { await page.click('#camBtn'); return until(() => performance.now() / 1000 - window.__mocap.seen.pose < 2, 120000); });
