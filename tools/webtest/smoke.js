@@ -77,16 +77,16 @@ const cam = process.argv[2];
     await stopFace(); return ok;
   });
   await check('表情を固定（H）すると顔の入力が変わっても表情が変わらない', async () => {
-    await feedFace({ jawOpen: 0.8 });
-    const open = await until(() => window.__mocap.avatar.vrm.expressionManager.getValue('aa') > 0.6);
+    // face results are fed one after another and read right away, so a slow machine can't change the outcome
+    const feed = (scores) => ev((sc) => { const m = window.__mocap; for (let i = 0; i < 12; i++) m.testFace(sc); return m.avatar.vrm.expressionManager.getValue('aa'); }, scores);
+    const open = await feed({ jawOpen: 0.8 }) > 0.6;
     await page.mouse.click(30, 700); await page.keyboard.press('h');
-    await feedFace({});
-    await page.waitForTimeout(1500);
-    const kept = await exprVal('aa') > 0.6 && await ev(() => window.__mocap.exprLocked);
+    const locked = await ev(() => window.__mocap.exprLocked);
+    const kept = await feed({}) > 0.6;
     await page.keyboard.press('h');
-    const back = await until(() => window.__mocap.avatar.vrm.expressionManager.getValue('aa') < 0.1);
-    if (!(open && kept && back)) console.log('lock debug:', open, kept, back, await exprVal('aa'), await ev(() => window.__mocap.exprLocked), await ev(() => document.activeElement?.tagName + '#' + document.activeElement?.id));
-    await stopFace(); return open && kept && back;
+    const back = await feed({}) < 0.1 && !(await ev(() => window.__mocap.exprLocked));
+    if (!(open && locked && kept && back)) console.log('lock debug:', open, locked, kept, back, await ev(() => document.activeElement?.tagName + '#' + document.activeElement?.id));
+    return open && locked && kept && back;
   });
   await check('頬染め：自動では頭を撫でると、「いつも」では常に出る', async () => {
     await ev(() => { const m = window.__mocap; m.reaction.kind = 'happy'; m.reaction.t = performance.now() / 1000; });

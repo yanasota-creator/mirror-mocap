@@ -143,6 +143,7 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 .tabs button:hover { color: var(--fg); }
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .sec[hidden] { display: none; }
+.sec { scroll-margin-top: 120px; } /* jumping to a section leaves room for the pinned search and tabs */
 .sec .search-miss { display: none !important; }
 /* grid items keep their content's width by default: a single wide control would push the whole panel past its edge */
 .panel { grid-template-columns: minmax(0, 1fr); }
@@ -444,7 +445,7 @@ body.stream .stage { height: 100%; min-height: 0; }
         <h2>シーン</h2>
         <p class="hint">今の設定の組み合わせ（背景・表情・小物・カメラ映像のロックなど）に名前を付けて保存し、ワンタッチで切り替えます。「配信用」「練習用」など。</p>
         <div class="scene-new">
-          <input type="text" id="sceneName" placeholder="シーンの名前（例：配信用）" aria-label="シーンの名前" maxlength="20" autocomplete="off">
+          <input type="text" id="sceneName" placeholder="名前（例：配信用）" aria-label="シーンの名前" maxlength="20" autocomplete="off">
           <button type="button" class="btn sm" id="sceneSave">今の設定を保存</button>
         </div>
         <div class="scene-list" id="sceneList"></div>

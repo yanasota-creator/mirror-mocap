@@ -129,6 +129,7 @@ dialog.browser::backdrop { background: rgba(8,9,13,.7); }
 .tabs button:hover { color: var(--fg); }
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .sec[hidden] { display: none; }
+.sec { scroll-margin-top: 120px; } /* jumping to a section leaves room for the pinned search and tabs */
 .sec .search-miss { display: none !important; }
 /* grid items keep their content's width by default: a single wide control would push the whole panel past its edge */
 .panel { grid-template-columns: minmax(0, 1fr); }
