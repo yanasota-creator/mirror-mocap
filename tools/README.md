@@ -10,7 +10,7 @@
 | `webtest/lib.js` | ブラウザのテストの共通部分（Webサーバー、CDN の代わりに node_modules のファイルを返す） | ほかのテストから使う |
 | `webtest/eslint.config.mjs` | コード点検（ESLint）の設定。`test_all.py` が index.html のスクリプトを取り出して点検する | `test_all.py` から使う |
 | `webtest/smoke.js` | Web版をブラウザ（Playwright の Chromium）で自動操作して、主な機能を確かめるテスト。結果を ○／× で出す | 下の「Web版のテスト」 |
-| `unity-stubs/` | Unity がなくても `MirrorMocapReceiver.cs` のコンパイルを確かめるための、Unity と UniVRM の簡易部品（スタブ） | `tools/unity-stubs/check.sh`（`mono-mcs` が必要） |
+| `unity-stubs/` | Unity がなくても `MirrorMocapReceiver.cs` のコンパイルを確かめるための、Unity と UniVRM の簡易部品（スタブ） | `tools/unity-stubs/check.sh`（`mono-mcs` が必要。`test_all.py` でも流れる） |
 | `test_bridge.py` | ブリッジ（bridge.py）の自動テスト。接続できるページ・接続コード・壊れたデータ・上限など15項目 | `python3 tools/test_bridge.py` |
 | `osc_log.py` | VRChat や VSeeFace の代わりに、届いた OSC を表示する受信テスト用プログラム | `python3 tools/osc_log.py native/bridge 30 9000`（30秒、ポート9000） |
 

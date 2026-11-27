@@ -9,6 +9,7 @@
 1. index.html is built from src/ and the library fingerprints (SRI) match   (tools/build.py --check)
 2. the page's script has no syntax errors and passes the code check         (node --check, ESLint)
 3. the PC bridge                                                             (tools/test_bridge.py)
+   and the Unity receiver compiles against small stand-ins for Unity / UniVRM  (tools/unity-stubs/check.sh, needs mcs)
 4. the web page in a real browser                                            (tools/webtest/smoke.js)
 5. accessibility, with --a11y                                                (tools/webtest/a11y.js)
 """
@@ -63,6 +64,7 @@ def main():
         '1. 組み立て・SRI': run('1. 組み立て・SRI', [PY, 'tools/build.py', '--check']),
         '2. 文法・コード点検': syntax_check(),
         '3. PCブリッジ': run('3. PCブリッジ', [PY, 'tools/test_bridge.py']),
+        '3b. Unity（コンパイル）': run('3b. Unity（コンパイル）', ['bash', 'tools/unity-stubs/check.sh']) if shutil.which('mcs') and shutil.which('bash') else None,
     }
     if '--quick' not in args:
         web = ROOT / 'tools' / 'webtest'

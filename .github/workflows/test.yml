@@ -28,9 +28,9 @@ jobs:
           npm ci
           npm install --no-save playwright@1.63.0
           npx playwright install --with-deps chromium
-      - name: A fake camera video from MediaPipe's sample photo (so the AI is tested too)
+      - name: ffmpeg for a fake camera video, mono for the Unity compile check; the video from MediaPipe's sample photo
         run: |
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg mono-mcs
           curl -sfL -o portrait.jpg https://storage.googleapis.com/mediapipe-assets/portrait.jpg
           ffmpeg -loglevel error -loop 1 -i portrait.jpg -vf "scale=-2:720,pad=1280:720:(ow-iw)/2:0,format=yuv420p" -t 2 -r 15 cam.y4m
       - name: Run all checks

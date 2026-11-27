@@ -87,6 +87,9 @@ public class MirrorMocapReceiver : MonoBehaviour
         new[] { HumanBodyBones.RightRingProximal, HumanBodyBones.RightRingIntermediate, HumanBodyBones.RightRingDistal },
         new[] { HumanBodyBones.RightLittleProximal, HumanBodyBones.RightLittleIntermediate, HumanBodyBones.RightLittleDistal },
     };
+    // made once: Enum.GetValues and new[] in Update would allocate every frame (and the garbage collector then stutters)
+    static readonly HumanBodyBones[] AllBones = (HumanBodyBones[])Enum.GetValues(typeof(HumanBodyBones));
+    static readonly bool[] Sides = { true, false };
     static readonly int[][] FingerLm = { new[] { 1, 2, 3, 4 }, new[] { 5, 6, 7, 8 }, new[] { 9, 10, 11, 12 }, new[] { 13, 14, 15, 16 }, new[] { 17, 18, 19, 20 } };
 
     void Start()
@@ -112,7 +115,7 @@ public class MirrorMocapReceiver : MonoBehaviour
         }
         else Debug.LogWarning("[MirrorMocap] Vrm10Instance が見つかりません。体は動きますが、表情と視線は動きません（VRM 1.0 として取り込まれているか確認してください）。");
 
-        foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones)))
+        foreach (HumanBodyBones b in AllBones)
         {
             if (b == HumanBodyBones.LastBone) continue;
             var t = boneOf(b);
@@ -251,7 +254,7 @@ public class MirrorMocapReceiver : MonoBehaviour
 
         float dt = Mathf.Min(Time.deltaTime, 0.1f);
         float w0 = 12f + 34f * (1f - smoothing), zeta = 1f - 0.72f * jiggle;
-        foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones))) // parents come before children in this enum
+        foreach (HumanBodyBones b in AllBones) // parents come before children in this enum
             if (bones.TryGetValue(b, out var s) && s.hasTarget) Spring(s, dt, w0, zeta);
         MoveBody(dt);
         for (int i = 0; i < 5; i++) presetW[i] += ((i == activePreset ? 1f : 0f) - presetW[i]) * (1f - Mathf.Exp(-dt * 10f));
@@ -330,7 +333,7 @@ public class MirrorMocapReceiver : MonoBehaviour
                 SetTarget(HumanBodyBones.Spine, Quaternion.Slerp(FromBasis(HumanBodyBones.Spine, hipsT, calibHips.HasValue ? R0 * calibHips.Value : restHips), FromBasis(HumanBodyBones.Spine, torsoT, torsoRest), 0.5f));
             SetTarget(hasChest ? HumanBodyBones.Chest : HumanBodyBones.Spine, FromBasis(hasChest ? HumanBodyBones.Chest : HumanBodyBones.Spine, torsoT, torsoRest));
 
-            foreach (bool left in new[] { true, false })
+            foreach (bool left in Sides)
             {
                 var U = left ? HumanBodyBones.LeftUpperArm : HumanBodyBones.RightUpperArm;
                 var L = left ? HumanBodyBones.LeftLowerArm : HumanBodyBones.RightLowerArm;
@@ -362,7 +365,7 @@ public class MirrorMocapReceiver : MonoBehaviour
             }
         }
 
-        foreach (bool left in new[] { true, false })
+        foreach (bool left in Sides)
         {
             var h = SubjectLeft(left) ? p.hl : p.hr;
             if (h == null || h.Length < 63) continue;
